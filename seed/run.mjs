@@ -282,7 +282,19 @@ async function main() {
     // configuration: the token only works from the page it was intended for, so a
     // leaked link pasted on a different site is refused. Future customers get
     // their own entry here with their own domain.
-    allowedOrigins: ['https://agency-proposals.com'],
+    /**
+     * The proposal host this token is pinned to.
+     *
+     * Defaults to the PRODUCTION host, so a seed run without configuration can
+     * never accidentally mint a token that a local page could use. Local E2E sets
+     * SEED_ALLOWED_ORIGIN=http://localhost:8890 explicitly.
+     *
+     * This pin is load-bearing security, not boilerplate: it is what stops a
+     * leaked prospect link from being pasted onto another site. It must never be
+     * relaxed to a wildcard, and a local override stays in the environment — the
+     * committed default remains the production origin.
+     */
+    allowedOrigins: [process.env.SEED_ALLOWED_ORIGIN || 'https://agency-proposals.com'],
     createdAt: FieldValue.serverTimestamp(),
     expiresAt,
     revokedAt: null,
