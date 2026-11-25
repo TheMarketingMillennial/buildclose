@@ -547,23 +547,16 @@ test('a session is structurally bound to one tenant and cannot address another',
 });
 
 // ────────────────────────────────────────────────────────────────── CORS
+//
+// CORS and preflight behaviour is NOT asserted here, deliberately.
+//
+// The Functions emulator wraps every function in its own permissive CORS layer
+// (`app.use(cors({ origin: true }))`), which answers OPTIONS before the function
+// body runs. Measured through port 5001, a preflight to a nonexistent route still
+// returns 204 with the caller's origin reflected — so assertions here would be
+// testing the emulator, not BuildClose, and could report success while the real
+// middleware was broken.
+//
+// The CORS and security-header contract is tested in tests/middleware.test.mjs,
+// which mounts the same app in a bare HTTP server with no emulator in the path.
 
-test('a disallowed origin receives no CORS allow header', async () => {
-  const res = await fetch(`${API}/api/terms`, {
-    method: 'OPTIONS',
-    headers: { Origin: FOREIGN_ORIGIN, 'Access-Control-Request-Method': 'POST' },
-  });
-  assert.equal(res.status, 403);
-  assert.equal(res.headers.get('access-control-allow-origin'), null);
-});
-
-test('the permitted chat origin receives an echoed allow header', async () => {
-  const res = await fetch(`${API}/api/terms`, {
-    method: 'OPTIONS',
-    headers: { Origin: CHAT_ORIGIN, 'Access-Control-Request-Method': 'POST' },
-  });
-  assert.equal(res.status, 204);
-  assert.equal(res.headers.get('access-control-allow-origin'), CHAT_ORIGIN);
-  assert.notEqual(res.headers.get('access-control-allow-origin'), '*');
-  assert.match(String(res.headers.get('vary') ?? ''), /Origin/i);
-});

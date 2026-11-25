@@ -9,7 +9,6 @@
  * never be cacheable across origins.
  */
 import type { Request, Response, NextFunction } from 'express';
-import { AppError, prospectMessage } from '../lib/errors.js';
 import { allowedCorsOrigin, getConfig } from '../lib/config.js';
 
 /** Origins permitted to call the prospect API: the chat app, plus dev hosts. */
@@ -51,26 +50,30 @@ export function securityHeaders(_req: Request, res: Response, next: NextFunction
   next();
 }
 
-/** Wrap an async handler so rejections become prospect-safe JSON errors. */
-export function handle(fn: (req: Request, res: Response) => Promise<void>) {
-  return async (req: Request, res: Response): Promise<void> => {
-    try {
-      await fn(req, res);
-    } catch (err) {
-      const safe = prospectMessage(err);
-      if (safe.retryAfter !== undefined) res.setHeader('Retry-After', String(safe.retryAfter));
-      if (!(err instanceof AppError)) {
-        console.error('[http] unhandled error', (err as Error)?.message);
-      }
-      res.status(safe.status).json({ error: { code: safe.code, message: safe.message } });
-    }
-  };
-}
-
-/** Best-effort client IP; Cloud Functions sets x-forwarded-for. */
+/**
+ * Client IP used for rate limiting.
+ *
+ * Takes the RIGHTMOST X-Forwarded-For entry, not the leftmost.
+ *
+ * This is a security fix, not a style choice. Cloud Run puts the calling IP at the
+ * end of the chain, and anything to its left was supplied by the caller. Reading
+ * the leftmost value let a client send a fresh `X-Forwarded-For` on every request,
+ * land in a new rate-limit bucket each time, and bypass the limiter entirely —
+ * which defeated the bootstrap brute-force guard and the per-IP chat throttle.
+ *
+ * Assumption: exactly one trusted proxy hop (the platform front end). If a CDN is
+ * ever placed in front, this must be revised to strip a known number of hops.
+ */
 export function clientIp(req: Request): string {
   const xff = req.headers['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0]!.trim();
+  if (typeof xff === 'string') {
+    const parts = xff
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    const last = parts[parts.length - 1];
+    if (last) return last;
+  }
   return req.ip ?? 'unknown';
 }
 
