@@ -92,11 +92,29 @@ function reportHeight() {
 
 // --------------------------------------------------------------- ui helpers
 
+let currentSection = null;
+
 function show(section) {
+  currentSection = section;
   for (const s of [el.loading, el.error, el.chat, el.accept, el.done]) {
     s.hidden = s !== section;
   }
   reportHeight();
+}
+
+/**
+ * Return to the conversation — but never pull the prospect away from a screen
+ * they deliberately went to.
+ *
+ * The widget sends bc:open on every panel open, including a reopen after the
+ * prospect closed the panel to re-read the proposal with the acceptance form
+ * half-filled. Unconditionally calling show(el.chat) there would silently
+ * discard their place and their typed name. Bootstrap finishing late had the
+ * same effect, which is what made the acceptance test fail intermittently.
+ */
+function returnToChat() {
+  if (currentSection === el.accept || currentSection === el.done) return;
+  show(el.chat);
 }
 
 function fail(message) {
@@ -296,7 +314,17 @@ async function sendMessage() {
     el.typing.hidden = true;
     if (err instanceof ApiError) {
       addMessage('assistant', err.message);
-      if (err.code === 'unauthorized' || err.code === 'token_expired') {
+      /**
+       * ANY 401 ends the session: revoked, expired, or invalid.
+       *
+       * This used to test for `unauthorized` and `token_expired` by name, which
+       * missed `token_revoked` — the very code the API throws when a seller
+       * revokes a link that is already open. The prospect got a polite bubble and
+       * a composer that still accepted text into a dead session, so a revoked
+       * link looked alive. Keying on the status is the durable rule: 401 means
+       * "this credential is no longer good", whatever the specific code.
+       */
+      if (err.status === 401) {
         fail('This session has ended. Please reopen the assistant from the proposal page.');
       }
     } else {
@@ -344,9 +372,20 @@ async function begin(token, embedOrigin) {
   if (started) {
     // Re-open of an existing session: reuse it if still valid.
     if (api.isAuthenticated && terms) {
-      show(el.chat);
+      returnToChat();
       return;
     }
+    /**
+     * Already bootstrapping: do NOT start a second run.
+     *
+     * The widget sends bc:init on every open, including an open that happens
+     * while the eager-mount bootstrap is still awaiting the API. Falling through
+     * used to launch a concurrent bootstrap; whichever run finished LAST then
+     * called show(el.chat), which hid the acceptance form the prospect had
+     * already opened. The in-flight run owns the transition — this call just
+     * waits for it.
+     */
+    return;
   }
   started = true;
   show(el.loading);
@@ -427,7 +466,7 @@ window.addEventListener('message', (event) => {
     if (terms) openAcceptance();
     else wantAccept = true;
   } else if (data.type === 'bc:open') {
-    if (terms) show(el.chat);
+    if (terms) returnToChat();
     setTimeout(() => {
       el.input.focus();
       reportHeight();

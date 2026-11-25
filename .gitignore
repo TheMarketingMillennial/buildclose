@@ -24,6 +24,11 @@ ui-debug.log
 # Project-scoped config that deliberately carries NO secrets (origins, model name).
 # Committed because Firebase reads it at deploy time. Never add a credential here.
 !functions/.env.buildclose-d4399
+# Same rule for the dashboard: public Firebase web config only (see the file's
+# own header). Without this negation `.env.*` above would silently drop it from
+# the repository, and the Netlify build would then fail on a missing API key with
+# no obvious cause.
+!apps/dashboard/.env.buildclose-d4399
 *.pem
 *.key
 serviceAccount*.json
