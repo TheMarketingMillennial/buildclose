@@ -67,3 +67,9 @@ export {
 export { inviteStaff, setStaffRole, listStaff, bootstrapCompany } from './staff/team.js';
 
 export { createCheckoutSession, stripeWebhook } from './staff/stripe.js';
+
+// ------------------------------------------------------------------- jobs
+// The scheduled purge is what makes the retention disclosure shown to a prospect
+// true. The callable twin exists for on-request deletions and for the emulator,
+// which cannot invoke Cloud Scheduler.
+export { retentionPurge, runRetentionPurge } from './jobs/retention.js';

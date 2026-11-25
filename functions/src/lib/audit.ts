@@ -26,7 +26,13 @@ export type AuditAction =
   | 'document.uploaded'
   | 'staff.invited'
   | 'role.changed'
-  | 'subscription.updated';
+  | 'subscription.updated'
+  /**
+   * Retention purge. Recorded as a system actor with the counts and the policy
+   * that justified the deletion, so the trail can answer "what was destroyed,
+   * for which company, under which retention window" long after it happened.
+   */
+  | 'retention.purged';
 
 export interface AuditEntry {
   companyId: string;
