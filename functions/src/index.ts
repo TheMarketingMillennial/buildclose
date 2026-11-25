@@ -16,6 +16,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 import { onRequest } from 'firebase-functions/v2/https';
 import express from 'express';
 
+import { AppError, prospectMessage } from './lib/errors.js';
 import { corsMiddleware, securityHeaders } from './http/helpers.js';
 import { bootstrapHandler } from './http/bootstrap.js';
 import { chatHandler } from './http/chat.js';
@@ -65,10 +66,37 @@ app.post('/api/decline', (req, res, next) => {
   Promise.resolve(declineHandler(req, res)).catch(next);
 });
 
-// Fallback error handler: never leak a stack trace to a prospect.
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[api] unhandled', err.message);
-  res.status(500).json({ error: { code: 'internal_error', message: 'Something went wrong.' } });
+/**
+ * Fallback error handler: never leak a stack trace to a prospect.
+ *
+ * This MUST map AppError to its real status. Collapsing every failure to 500 was
+ * a live defect: a revoked token, an unpublished proposal and a rate-limited
+ * caller all reached the client as `internal_error`, so the widget could not tell
+ * a retryable throttle from a dead link, and `Retry-After` never reached the
+ * browser. Unknown errors still degrade to a generic 500.
+ */
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (res.headersSent) return;
+
+  const safe = prospectMessage(err);
+  if (safe.retryAfter !== undefined) res.setHeader('Retry-After', String(safe.retryAfter));
+
+  if (!(err instanceof AppError)) {
+    // Body-parser failures are client faults and carry a useful status; only
+    // genuinely unexpected errors are worth logging and masking as 500.
+    const type = (err as { type?: string } | null)?.type;
+    if (type === 'entity.parse.failed') {
+      res.status(400).json({ error: { code: 'bad_request', message: 'That request could not be processed.' } });
+      return;
+    }
+    if (type === 'entity.too.large') {
+      res.status(413).json({ error: { code: 'bad_request', message: 'That request could not be processed.' } });
+      return;
+    }
+    console.error('[api] unhandled', (err as Error)?.message);
+  }
+
+  res.status(safe.status).json({ error: { code: safe.code, message: safe.message } });
 });
 
 export const api = onRequest(
