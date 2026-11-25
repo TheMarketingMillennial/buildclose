@@ -339,9 +339,43 @@ export const updateProposal = onCall({ region: REGION }, async (request) => {
       }
     }
 
+    /**
+     * Authority values are persisted to TWO places, and both are necessary.
+     *
+     * `authorityOverrides` is the channel `effectiveAuthority()` reads once a
+     * company has a governed policy. Writing only the top-level fields is a
+     * silent-data-loss bug that this integration suite caught: a manager
+     * tightening the ceiling to 5% wrote `maxDiscountPercent: 5` at the top
+     * level, the governed path ignored it (it consults company policy plus
+     * `authorityOverrides`), and the assistant kept using the company's 15%. The
+     * manager saw "saved" and the restriction never took effect.
+     *
+     * The top-level fields are still written because a LEGACY tenant — one with
+     * no `companyAuthority` document, i.e. every existing customer including
+     * Abrica — resolves its authority from them directly. In the governed path
+     * the top-level values are inert; in the legacy path the overrides are (the
+     * legacy branch returns before consulting them). Writing both is therefore
+     * correct in both worlds and cannot loosen anything, because the read-time
+     * clamp still decides the binding value.
+     *
+     * NOTE: a nested object is required here, not dotted keys. `set(..., {merge:
+     * true})` treats `'authorityOverrides.x': 5` as a LITERAL top-level field
+     * name; only `update()` interprets dots as paths. A probe confirmed this
+     * (keys became ['a', 'a.c']). `set` with merge does deep-merge nested maps,
+     * so this preserves any override key it does not mention.
+     */
+    const authorityOverrides: Record<string, number> = {};
+    if (internal.priceFloorMinor !== undefined) authorityOverrides.priceFloorMinor = internal.priceFloorMinor;
+    if (internal.maxDiscountPercent !== undefined) authorityOverrides.maxDiscountPercent = internal.maxDiscountPercent;
+
     batch.set(
       db.collection(COLLECTIONS.proposalInternal).doc(id),
-      { ...internal, companyId: identity.companyId, updatedAt: FieldValue.serverTimestamp() },
+      {
+        ...internal,
+        ...(Object.keys(authorityOverrides).length > 0 ? { authorityOverrides } : {}),
+        companyId: identity.companyId,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
       { merge: true },
     );
   }

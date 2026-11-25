@@ -183,6 +183,8 @@ export async function cleanupCompany(companyId) {
     'auditLog',
     'aiUsage',
     'users',
+    'companyIntelligence',
+    'companyAuthority',
   ];
 
   for (const name of collections) {
