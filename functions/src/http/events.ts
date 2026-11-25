@@ -33,10 +33,14 @@ export async function eventHandler(req: Request, res: Response): Promise<void> {
   const limit = await consume([{ key: `event:ip:${ipHash}`, limit: 120, windowSec: 60 }]);
   if (!limit.allowed) throw new AppError(429, 'rate_limited', 'Too many events', limit.retryAfter);
 
+  // Authenticate BEFORE validating the body. Two reasons: an unauthenticated
+  // caller should receive 401 rather than a hint about the expected schema, and
+  // the endpoint's contract is "requires a session" — a malformed body from a
+  // session-less caller is still an auth failure, not a client-input failure.
+  const ctx = await resolveProspectContext(sessionToken, req.headers.origin as string | undefined, cfg);
+
   const parsed = Body.safeParse(req.body);
   if (!parsed.success) throw badRequest('Invalid event');
-
-  const ctx = await resolveProspectContext(sessionToken, req.headers.origin as string | undefined, cfg);
 
   // A cta_clicked event can only reference a CTA that exists and is enabled.
   if (parsed.data.type === 'cta_clicked' && parsed.data.ctaId) {

@@ -18,9 +18,24 @@ import { createServer } from 'node:http';
 
 const PORT = Number(process.env.STUB_PORT ?? 8787);
 
-/** Scenario selected by inspecting the incoming user turn. */
-function pickReply(userText) {
-  const t = userText.toLowerCase();
+/**
+ * Scenario selected by inspecting the prospect's LATEST turn only.
+ *
+ * The server sends the whole conversation in one user message (a transcript plus
+ * a "New message from prospect:" marker). Routing on the entire payload made the
+ * stub match phrases from earlier turns, so a conversation that had once contained
+ * "ignore previous instructions" got the injection reply to every later question —
+ * a stub artefact that looked exactly like a guardrail failure. A real model reads
+ * the history but answers the new turn, so the stub now does the same.
+ */
+function latestTurn(rawUserText) {
+  const marker = 'New message from prospect:';
+  const i = rawUserText.lastIndexOf(marker);
+  return i === -1 ? rawUserText : rawUserText.slice(i + marker.length);
+}
+
+function pickReply(rawUserText) {
+  const t = latestTurn(rawUserText).toLowerCase();
 
   // Attempt to extract the system prompt.
   if (/ignore|reveal|print (your|the)|system prompt/.test(t)) {

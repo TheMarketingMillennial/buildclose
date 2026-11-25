@@ -15,7 +15,7 @@
  * Run:
  *   node --test tests/integration.test.mjs
  */
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -34,6 +34,33 @@ if (!getApps().length) {
 const db = getFirestore();
 
 const seeded = JSON.parse(await readFile(new URL('../seed/.seeded.json', import.meta.url), 'utf8'));
+
+/**
+ * Reset rate-limit counters before every test.
+ *
+ * Without this the suite is not idempotent, and it fails in a way that looks like
+ * a security regression while actually being self-poisoning.
+ *
+ * Measured behaviour of the Functions emulator: it does NOT forward a
+ * caller-supplied X-Forwarded-For (a request sent with `10.77.77.77` was recorded
+ * under the hash of `unknown`), so every request in the run shares ONE bucket. The
+ * suite makes ~25 bootstrap calls, and bootstrap allows 30/minute — so a first run
+ * squeaks through, exhausts the bucket, and then the NEXT run starts already
+ * throttled. Tests that passed first time then failed on an unrelated rerun.
+ *
+ * Per-test IPs would be the cleaner fix but are impossible here for the reason
+ * above, so limiter state is cleared between tests instead. The rate-limit test
+ * still proves the limiter fires; it just starts from a known-empty bucket.
+ */
+async function resetRateLimits() {
+  const snap = await db.collection('rateLimits').limit(500).get();
+  if (snap.empty) return;
+  await Promise.all(snap.docs.map((d) => d.ref.delete()));
+}
+
+beforeEach(async () => {
+  await resetRateLimits();
+});
 
 // ─────────────────────────────────────────────────────────────────── helpers
 

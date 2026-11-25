@@ -41,13 +41,15 @@ export async function acceptHandler(req: Request, res: Response): Promise<void> 
   const limit = await consume([{ key: `accept:ip:${ipHash}`, limit: 10, windowSec: 300 }]);
   if (!limit.allowed) throw new AppError(429, 'rate_limited', 'Too many attempts', limit.retryAfter);
 
+  // Authenticate before validating the body: a session-less caller must get 401,
+  // not a 400 that describes the expected payload shape.
+  const ctx = await resolveProspectContext(sessionToken, req.headers.origin as string | undefined, cfg);
+
   const parsed = Body.safeParse(req.body);
   if (!parsed.success) {
     throw badRequest(parsed.error.issues[0]?.message ?? 'Invalid acceptance payload');
   }
   const input = parsed.data;
-
-  const ctx = await resolveProspectContext(sessionToken, req.headers.origin as string | undefined, cfg);
 
   // --- integrity: the client must have displayed the current terms ---
   const currentHash = hashProposalDocument(ctx.proposal);
