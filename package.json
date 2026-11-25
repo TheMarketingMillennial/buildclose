@@ -11,7 +11,7 @@
     "emu:seed": "npm run build:functions && node seed/run.mjs",
     "build:functions": "npm --workspace functions run build",
     "test": "node --test tests/",
-    "test:security": "node --test tests/security.test.mjs",
+    "test:security": "node --test tests/rules.test.mjs",
     "lint": "npm --workspace functions run typecheck"
   },
   "devDependencies": {

@@ -6,6 +6,97 @@ small batches and the emulator is restarted between them because this sandbox ha
 
 Keep this file updated after each batch so progress survives a sandbox reset.
 
+---
+
+# CONSOLIDATED RESULTS — all suites
+
+Code revision for every result below: **`39a97c4`** (the current `main` HEAD at
+hand-off). No source file has changed since these runs; the only later commits are
+documentation.
+
+| Suite | Cases | Result | Environment |
+| --- | --- | --- | --- |
+| `tests/unit.test.mjs` | 19 | **19 / 19 pass** | no emulator |
+| `tests/middleware.test.mjs` | 8 | **8 / 8 pass** | no emulator |
+| `tests/rules.test.mjs` | 9 | **9 / 9 pass** | Firestore emulator |
+| `tests/integration.test.mjs` | 27 | **27 / 27 pass** | full emulator |
+| `tests/retention.test.mjs` | 11 | **11 / 11 pass** | full emulator |
+| `tests/e2e.browser.test.mjs` | 10 | **10 / 10 pass** | emulator + Playwright/Chromium |
+| `tests/dashboard.auth.test.mjs` | 29 | **29 / 29 pass** | full emulator, batched |
+
+**Total: 113 assertions-bearing cases, 113 passing.**
+
+`dashboard.auth` is the only suite that could not complete as a single process, for a
+purely environmental reason: this sandbox has 1991 MB total and the emulator stack
+(auth + Java Firestore + ~10 functions workers at ~150 MB each) leaves 150–300 MB
+free, so a process running more than about five tests is OOM-killed mid-run and its
+survivors emit `fetch failed`. That symptom is indistinguishable from a product
+failure, which is exactly why it was not accepted as one. It was resolved by running
+the suite in nine small batches, restarting the emulator between batches, and moving
+shared fixtures into `before()` hooks so any subset is self-sufficient. Every batch
+below is a **first-attempt pass**; no test was retried to mask a failure.
+
+The 29 dashboard cases, all passing:
+
+| # | Case | Area |
+| --- | --- | --- |
+| 1 | refuses a production project id | fixture safety |
+| 2 | refuses a non-local emulator host | fixture safety |
+| 3 | refuses an unknown project rather than assuming it is safe | fixture safety |
+| 4 | accepts the emulator it is actually running on | fixture safety |
+| 5 | rejects every staff callable without an ID token | unauthorised access |
+| 6 | rejects a malformed token | unauthorised access |
+| 7 | creates a proposal with a server-assigned tenant and internal record | lifecycle |
+| 8 | hides the internal record from a sales_rep but keeps internal rights for an admin | lifecycle |
+| 9 | publishes and stamps a canonical document hash | lifecycle |
+| 10 | updates assistant configuration and persists it | fix 4 |
+| 11 | resets acceptance to superseded when a commercial term changes | lifecycle |
+| 12 | mints a token, storing only its hash and honouring the origin pin | access links |
+| 13 | records a prospect acceptance end to end through the minted link | access links |
+| 14 | refuses an acceptance whose document hash is stale | access links |
+| 15 | revokes the link and the next bootstrap is refused | access links |
+| 16 | reports observed and inferred signals in separate fields | analytics |
+| 17 | may configure the assistant but may not manage the team | sales_manager |
+| 18 | may not grant a role at or above its own | sales_manager |
+| 19 | may create a proposal but may not set commercial authority | sales_rep / fix 3 |
+| 20 | may not edit the assistant or internal record after creation | sales_rep |
+| 21 | cannot read the team or the audit trail | sales_rep |
+| 22 | cannot read another rep's proposal, reported as not-found | sales_rep |
+| 23 | reports a cross-tenant proposal as not-found, never as forbidden | tenant isolation |
+| 24 | does not list another tenant in the proposal list | tenant isolation |
+| 25 | does not expose another tenant in analytics or conversations | tenant isolation |
+| 26 | does not reveal another tenant in the audit log | tenant isolation |
+| 27 | rejects a wrong setup code | onboarding |
+| 28 | rejects a correct code while a company already exists | onboarding |
+| 29 | creates the first company and its admin from an empty database, then restores it | onboarding |
+
+## The four product defects found by this suite
+
+All four were real, all four were fixed in the source, all four are verified at
+runtime by the cases above.
+
+1. **`ProposalInternalInput` had no defaults.** Creating any proposal without an
+   explicit `internal` block threw a ZodError, surfacing as an opaque `INTERNAL`
+   error. Fixed with `.default(0)` on `priceFloorMinor` and `maxDiscountPercent`.
+2. **Zod stripped `companyId`.** It is not a declared schema field, so the internal
+   record was written with no tenant. Consequences: `getProposal` withheld the
+   internal block from admins, and `resolveProspectContext` would 404 every newly
+   created proposal for the prospect. Fixed by applying `companyId` after parsing.
+3. **`createProposal` did not gate `internal` / `agent` behind `CONFIG_ROLES`.** A
+   `sales_rep` could self-grant `maxDiscountPercent: 100` at creation, bypassing the
+   gate `updateProposal` already enforced. Fixed.
+4. **`UpdateInput.proposal` was required.** The dashboard's assistant tab sends
+   `{id, agent}`, so it could never save. Fixed with `.partial().optional()`.
+
+## What these results do and do not prove
+
+They prove the authorisation boundary, the tenancy boundary, the commercial
+guardrail plumbing, the acceptance evidence chain, and the retention behaviour
+against a real emulated Firebase, with real ID tokens carrying real custom claims.
+
+They do **not** prove anything about production: no deploy has occurred. Every
+production-only unknown is enumerated in `docs/PRODUCTION-READINESS.md`.
+
 ## Four product fixes (found during task 4, all in commit 89a5318 or later)
 
 | # | Fix | Runtime verified |
