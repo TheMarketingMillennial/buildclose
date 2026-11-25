@@ -328,10 +328,24 @@ async function begin(token, embedOrigin) {
 
   try {
     const proposal = await api.bootstrap(token, embedOrigin);
-    el.title.textContent = proposal.title || 'Proposal assistant';
-    el.subtitle.textContent = 'Ask anything about this proposal';
+    el.title.textContent = proposal.title || 'Proposal';
 
     terms = await api.terms();
+
+    // Identity is server-controlled and neutral by default: the assistant speaks
+    // for the seller, not for BuildClose. Order matters — bootstrap only knows the
+    // proposal title, so the header is finalised once /api/terms returns.
+    const identity = terms.identity || {};
+    el.title.textContent = identity.displayName || 'Proposal Assistant';
+    el.subtitle.textContent = identity.subtitle || 'Ask anything about this proposal';
+
+    if (identity.accentColor) {
+      document.documentElement.style.setProperty('--accent', identity.accentColor);
+    }
+    if (identity.showVendorBranding !== true) {
+      const badge = document.getElementById('vendor-badge');
+      if (badge) badge.hidden = true;
+    }
 
     if (terms.disclosure) {
       el.disclosure.textContent =
@@ -345,11 +359,12 @@ async function begin(token, embedOrigin) {
     await api.event('proposal_view');
 
     if (el.log.childElementCount === 0) {
-      addMessage(
-        'assistant',
-        `Thanks for taking a look at the ${terms.proposal.title}. ` +
-          'I can walk you through the scope, the investment, or how the checkpoints work — what would be most useful?',
-      );
+      const greeting =
+        identity.welcomeMessage && identity.welcomeMessage.trim()
+          ? identity.welcomeMessage.trim()
+          : `Thanks for taking a look at the ${terms.proposal.title}. ` +
+            'I can walk you through the scope, the investment, or how the checkpoints work — what would be most useful?';
+      addMessage('assistant', greeting);
     }
     el.input.focus();
   } catch (err) {

@@ -26,8 +26,8 @@
         </svg>
       </span>
       <div>
-        <h1 id="title">Proposal assistant</h1>
-        <p id="subtitle">Powered by BuildClose</p>
+        <h1 id="title">Proposal Assistant</h1>
+        <p id="subtitle">Ask anything about this proposal</p>
       </div>
     </div>
     <button id="close" class="icon-btn" type="button" aria-label="Close assistant">
@@ -36,6 +36,10 @@
       </svg>
     </button>
   </header>
+
+  <!-- Opt-in vendor badge. Hidden unless the proposal sets showVendorBranding.
+       Kept deliberately quiet: the prospect is the seller's guest, not ours. -->
+  <p id="vendor-badge" class="vendor-badge" hidden>Assistant by BuildClose</p>
 
   <!-- Loading -->
   <section id="loading" class="state" aria-live="polite">

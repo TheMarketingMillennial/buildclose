@@ -1,6 +1,19 @@
 /* BuildClose chat app — embed surface.
    Deliberately restrained: this sits inside a customer's proposal page and must
-   not compete with it. Enterprise-neutral, one accent, no gradients. */
+   not compete with it. Enterprise-neutral, one accent, no gradients.
+
+   The accent is tenant-configurable at runtime (see identity.accentColor in the
+   terms DTO); --accent below is only the neutral default. */
+
+.vendor-badge {
+  margin: 0;
+  padding: 5px 14px;
+  font-size: 11px;
+  letter-spacing: .01em;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line-2);
+  background: var(--bg-2);
+}
 
 :root {
   --ink: #16181d;

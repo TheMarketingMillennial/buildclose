@@ -32,7 +32,9 @@ function stripeClient(): Stripe {
 }
 
 /** Start a subscription checkout for the caller's company. */
-export const createCheckoutSession = onCall({ region: REGION }, async (request) => {
+export const createCheckoutSession = onCall(
+  { region: REGION, secrets: ['STRIPE_SECRET_KEY'] },
+  async (request) => {
   const identity = requireStaff(request);
   requireRole(identity, ['company_admin']);
 
@@ -73,7 +75,9 @@ export const createCheckoutSession = onCall({ region: REGION }, async (request) 
  * Stripe webhook. Mounted with a raw body parser in index.ts.
  * Every event is validated by signature before any state is touched.
  */
-export const stripeWebhook = onRequest({ region: REGION }, async (req: Request, res: Response) => {
+export const stripeWebhook = onRequest(
+  { region: REGION, secrets: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'] },
+  async (req: Request, res: Response) => {
   const cfg = getConfig();
   if (!cfg.stripeKey || !cfg.stripeWebhookSecret) {
     res.status(503).json({ error: 'Stripe not configured' });

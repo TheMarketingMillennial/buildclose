@@ -64,7 +64,20 @@ export type CtaLink = z.infer<typeof CtaLink>;
 
 // ------------------------------------------------- agent config (prospect-visible knowledge)
 export const AgentConfigInput = z.object({
-  displayName: z.string().min(1).max(80).default('Abrica Assistant'),
+  // Neutral by default. The assistant presents itself as the SELLER's assistant;
+  // it should never volunteer that it is a BuildClose product unless the tenant
+  // opts in via showVendorBranding below.
+  displayName: z.string().min(1).max(80).default('Proposal Assistant'),
+  subtitle: z.string().max(120).default('Ask anything about this proposal'),
+  welcomeMessage: z.string().max(600).default(''),
+  // Tenant accent, applied to the chat header and send button.
+  accentColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Expected a hex colour like #1b3a6b')
+    .default('#1b3a6b'),
+  // Off by default: BuildClose branding must not dominate the prospect's
+  // experience. Turning this on adds a small, unobtrusive vendor badge.
+  showVendorBranding: z.boolean().default(false),
   persona: z.string().max(1000).default('consultative, precise, unhurried'),
   tone: z.enum(['consultative', 'direct', 'warm', 'formal']).default('consultative'),
   // Approved, quotable value statements.

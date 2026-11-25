@@ -103,7 +103,14 @@ async function main() {
   // -------------------------------------------------- prospect-visible knowledge
   await db.collection('agentConfigs').doc(proposalRef.id).set(
     {
+      // Identity is neutral and seller-branded. The prospect is Abrica's guest:
+      // nothing here says "BuildClose", and vendor branding stays off.
       displayName: 'Abrica Assistant',
+      subtitle: 'Ask anything about this proposal',
+      accentColor: '#1b3a6b',
+      showVendorBranding: false,
+      welcomeMessage:
+        'Thanks for taking a look at the Stage One proposal. I can walk you through the scope, the $24,000 investment, how the four checkpoints work, or what happens after you accept — what would be most useful?',
       persona:
         'A calm, precise product specialist who knows the Stage One scope in detail. Speaks in short paragraphs, never oversells, and is comfortable saying that something is out of scope.',
       tone: 'consultative',
@@ -255,7 +262,11 @@ async function main() {
     companyId,
     proposalId: proposalRef.id,
     label: 'Hector Abrica — proposal link',
-    allowedOrigins: [], // empty = not pinned; the token itself authorises
+    // Pinned to the authorized proposal host. This is the per-proposal origin
+    // configuration: the token only works from the page it was intended for, so a
+    // leaked link pasted on a different site is refused. Future customers get
+    // their own entry here with their own domain.
+    allowedOrigins: ['https://agency-proposals.com'],
     createdAt: FieldValue.serverTimestamp(),
     expiresAt,
     revokedAt: null,

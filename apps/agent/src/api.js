@@ -36,6 +36,14 @@ export interface Terms {
   documentHash: string;
   acceptanceStatus: string;
   ctas: Cta[];
+  /** Prospect-facing identity. Server-controlled; neutral by default. */
+  identity?: {
+    displayName?: string;
+    subtitle?: string;
+    accentColor?: string;
+    showVendorBranding?: boolean;
+    welcomeMessage?: string;
+  };
   disclosure: { conversationLogged: boolean; retentionDays: number; assistantIsAI: boolean };
 }
 

@@ -51,6 +51,14 @@ export async function termsHandler(req: Request, res: Response): Promise<void> {
     acceptanceStatus: (ctx.proposal as unknown as { acceptanceStatus?: string }).acceptanceStatus ?? 'none',
     // Approved calls to action, resolved server-side.
     ctas: ctx.ctas,
+    // Prospect-facing identity. Neutral by default: the assistant introduces
+    // itself on the seller's behalf, and vendor branding is opt-in per proposal.
+    identity: {
+      displayName: ctx.agent.displayName,
+      subtitle: ctx.agent.subtitle,
+      accentColor: ctx.agent.accentColor,
+      showVendorBranding: ctx.agent.showVendorBranding,
+    },
     // Disclosure surface: the UI must show these.
     disclosure: {
       conversationLogged: true,

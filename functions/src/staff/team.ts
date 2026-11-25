@@ -162,7 +162,9 @@ export const listStaff = onCall({ region: REGION }, async (request) => {
  * cannot be called by an attacker before the tenant exists, and refuses to run
  * once any company is present.
  */
-export const bootstrapCompany = onCall({ region: REGION }, async (request) => {
+export const bootstrapCompany = onCall(
+  { region: REGION, secrets: ['SETUP_CODE'] },
+  async (request) => {
   const setupCode = process.env.SETUP_CODE;
   if (!setupCode) throw new HttpsError('failed-precondition', 'Setup is not enabled');
 

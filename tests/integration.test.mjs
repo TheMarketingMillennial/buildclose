@@ -85,8 +85,16 @@ async function post(path, body, { token, origin = CHAT_ORIGIN } = {}) {
   return { status: res.status, json, text, headers: res.headers };
 }
 
+/**
+ * The seeded Abrica token is pinned to this host (see seed/run.mjs). Tests that
+ * bootstrap with it must present this origin, or they are testing the pin rather
+ * than the behaviour they name. Tokens created by mintToken() below are unpinned,
+ * which is why they can bootstrap from anything.
+ */
+const ABRICA_EMBED_ORIGIN = 'https://agency-proposals.com';
+
 /** Bootstrap a session for a given token. */
-async function session(token, embedOrigin = 'https://proposal.customer.example') {
+async function session(token, embedOrigin = ABRICA_EMBED_ORIGIN) {
   const r = await post('/api/bootstrap', { token, embedOrigin });
   assert.equal(r.status, 200, `bootstrap failed: ${r.text}`);
   return r.json.session;
@@ -124,7 +132,7 @@ async function waitFor(fn, { tries = 25, delayMs = 120 } = {}) {
 test('a valid proposal token exchanges for a session', async () => {
   const r = await post('/api/bootstrap', {
     token: seeded.token,
-    embedOrigin: 'https://proposal.customer.example',
+    embedOrigin: ABRICA_EMBED_ORIGIN,
   });
   assert.equal(r.status, 200);
   assert.ok(typeof r.json.session === 'string' && r.json.session.includes('.'));
@@ -133,7 +141,8 @@ test('a valid proposal token exchanges for a session', async () => {
 });
 
 test('the bootstrap response never contains commercial internals', async () => {
-  const r = await post('/api/bootstrap', { token: seeded.token, embedOrigin: 'https://x.example' });
+  const r = await post('/api/bootstrap', { token: seeded.token, embedOrigin: ABRICA_EMBED_ORIGIN });
+  assert.equal(r.status, 200);
   for (const forbidden of ['priceFloorMinor', 'negotiationBoundaries', 'competitorNotes', 'internalNotes', 'maxDiscountPercent']) {
     assert.ok(!r.text.includes(forbidden), `bootstrap leaked ${forbidden}`);
   }
@@ -151,12 +160,36 @@ test('a well-formed but unknown token is rejected', async () => {
   assert.equal(r.status, 401);
 });
 
-test('a bootstrap from a foreign origin is refused', async () => {
-  const r = await post('/api/bootstrap', { token: seeded.token, embedOrigin: 'https://x.example' }, {
+test('a bootstrap from a foreign caller origin is refused', async () => {
+  // The embed origin is CORRECT here; only the calling origin is foreign. That
+  // isolates the caller-origin check from the per-token embed pin, which would
+  // otherwise fire first and make this pass for the wrong reason.
+  const r = await post('/api/bootstrap', { token: seeded.token, embedOrigin: ABRICA_EMBED_ORIGIN }, {
     origin: FOREIGN_ORIGIN,
   });
   assert.equal(r.status, 403);
   assert.equal(r.json.error.code, 'origin_not_allowed');
+});
+
+/**
+ * Requirement 2 / decision 2: a token is pinned to the proposal host it was
+ * minted for. A leaked link pasted onto a different site is refused, and the
+ * refusal is indistinguishable from "not permitted" — it grants nothing.
+ */
+test('a token pinned to the Abrica host is refused on any other host', async () => {
+  const wrong = await post('/api/bootstrap', {
+    token: seeded.token,
+    embedOrigin: 'https://somewhere-else.example',
+  });
+  assert.equal(wrong.status, 403);
+  assert.equal(wrong.json.error.code, 'origin_not_allowed');
+  assert.ok(!wrong.text.includes('Abrica'), 'a refused origin must not learn the proposal title');
+
+  const right = await post('/api/bootstrap', {
+    token: seeded.token,
+    embedOrigin: ABRICA_EMBED_ORIGIN,
+  });
+  assert.equal(right.status, 200);
 });
 
 test('a token pinned to an allowed origin rejects a different host', async () => {
