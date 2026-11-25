@@ -1,0 +1,53 @@
+# BuildClose — commercial site (buildclose.app)
+#
+# NETLIFY SETUP: set this site's Base directory to `apps/marketing`. `publish`
+# is then resolved relative to that folder, which is why it is "." and not
+# "apps/marketing".
+#
+# There is NO build command. The site is hand-written HTML, CSS and one ES
+# module. Nothing to compile means nothing to break.
+#
+# Deploy:  netlify deploy --prod --dir apps/marketing   (site: buildclose-web)
+
+[build]
+  publish = "."
+
+# The page is a single document plus assets; a 404 should be the real 404.
+# `pretty_urls` is on, so /thanks resolves to thanks.html without a redirect.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), usb=(), payment=()"
+    # No inline styles or scripts anywhere in this site, so none of the usual
+    # escape hatches are needed. There is no third-party origin at all: no
+    # analytics, no font CDN, no tag manager. A marketing page that talks about
+    # keeping commercial data private should not ship a tracker.
+    #
+    # form-action 'self' is required for the Netlify Forms submission.
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    # Immutable assets, fingerprinted by content in practice. Long cache is safe
+    # because a logo change ships as a new file name.
+    Cache-Control = "public, max-age=604800"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"

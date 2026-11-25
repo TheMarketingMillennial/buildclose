@@ -110,7 +110,7 @@ Committed at `functions/.env.buildclose-d4399`. Loaded by Firebase at deploy tim
 | `CHAT_ORIGIN` | `https://agent.buildclose.app` | **The** allowed API caller origin. Changing it to an unmatched value instantly CORS-blocks every browser call — useful as an emergency stop (RUNBOOK §16). |
 | `DASHBOARD_ORIGIN` | `https://app.buildclose.app` | Staff origin |
 | `EMBED_ORIGIN` | `https://agency-proposals.com` | Default authorised proposal host for embeds |
-| `APP_BASE_URL` | `https://buildclose.app` | Links in generated content |
+| `APP_BASE_URL` | `https://buildclose.app` | **Reserved — not currently read by any code.** Declared in `functions/src/lib/config.ts` but consumed by nothing, so no link is generated from it today. Safe to leave set for when the marketing site goes live. |
 | `OPENAI_MODEL` | `gpt-6.1-sol` | Model id. **Must be a model your OpenAI account can access**; a wrong value fails on the first chat request, not at deploy. Pricing per model is in `functions/src/lib/pricing.ts`. |
 | `STORAGE_BUCKET` | **not yet in the file — add it** | `buildclose-d4399.firebasestorage.app`. If unset, code falls back to `<project>.appspot.com`, which is the wrong domain for this project. See RUNBOOK §5. |
 

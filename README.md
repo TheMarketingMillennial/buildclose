@@ -17,7 +17,7 @@ authorised.
 | Assistant infrastructure (`/widget.js`, `/embed`) | `agent.buildclose.app` | Netlify | `apps/agent` |
 | Staff dashboard | `app.buildclose.app` | Netlify | `apps/dashboard` |
 | Client-facing proposal document | `agency-proposals.com` | Netlify | `apps/proposals` |
-| Commercial marketing site | `buildclose.app` | not built yet | — |
+| Commercial marketing site | `buildclose.app` | Netlify (site built, not yet deployed) | `apps/marketing` |
 
 - Source: <https://github.com/TheMarketingMillennial/buildclose.git>
 - Firebase project: **`buildclose-d4399`** (region `us-central1`)
@@ -138,6 +138,25 @@ permission error.
 
 The token is injected rather than committed so it never enters git history, build
 logs, or a repository archive, and rotating it is an environment-variable change.
+
+### `apps/marketing` — commercial site
+`buildclose.app`. Static HTML/CSS/JS with **no build step** and **no dependency on
+the other three apps** — no shared imports, no Firebase SDK, no call to the
+functions host. Its only link into the product is the "Customer sign in" button
+pointing at `app.buildclose.app`.
+
+- `index.html` — hero, scripted product demonstration, how it works, features,
+  industries, demo-request form, footer.
+- `app.js` — the demonstration is **scripted from fictional data** (Meridian Studio
+  / Northwind & Co. / £18,500). It makes no network request and calls no model, so
+  it cannot misrepresent live behaviour or incur API cost.
+- `netlify.toml` — publishes the directory as-is, with a CSP that allows **no**
+  inline `style` or `script`, plus `X-Frame-Options: DENY`.
+
+The site states no testimonials, customer counts, conversion rates or prices,
+because none have been established. `docs/CONFIGURATION.md` records `APP_BASE_URL`
+as **reserved and unread** — the site is the intended consumer, but nothing
+generates links from it yet.
 
 ---
 
