@@ -92,6 +92,28 @@ before(async () => {
   manager = await signIn(MANAGER);
   rep = await signIn(REP);
   otherAdmin = await signIn(OTHER_ADMIN);
+
+  /**
+   * The shared proposal is created and published HERE, not inside a test.
+   *
+   * Suites are run in small batches to stay under the sandbox memory ceiling, and
+   * `--test-name-pattern` skips the bodies of tests that do not match while still
+   * running this hook. When creation lived in the first lifecycle test, every
+   * other test in a subset ran with `proposalId === undefined` and failed with
+   * "Invalid update payload" — a fixture-order artifact that looked exactly like a
+   * product bug. Creating it here makes any subset self-sufficient.
+   */
+  const created = await call(
+    'createProposal',
+    {
+      proposal: proposalPayload(),
+      internal: { priceFloorMinor: 1_500_000, maxDiscountPercent: 5 },
+      agent: { displayName: 'Proposal Assistant', showVendorBranding: false },
+    },
+    admin.idToken,
+  );
+  proposalId = created.id;
+  await call('publishProposal', { id: proposalId }, admin.idToken);
 });
 
 after(async () => {
@@ -156,6 +178,9 @@ describe('unauthenticated access', () => {
 
 describe('proposal lifecycle as company_admin', () => {
   it('creates a proposal with a server-assigned tenant and internal record', async () => {
+    // A LOCAL id: the shared `proposalId` comes from before() and must stay stable
+    // so that a subset run of this suite cannot leave other tests pointing at a
+    // different (or unpublished) proposal.
     const created = await call(
       'createProposal',
       {
@@ -165,16 +190,16 @@ describe('proposal lifecycle as company_admin', () => {
       },
       admin.idToken,
     );
-    proposalId = created.id;
-    assert.ok(proposalId, 'createProposal should return an id');
+    const localId = created.id;
+    assert.ok(localId, 'createProposal should return an id');
 
-    const stored = await db.collection('proposals').doc(proposalId).get();
+    const stored = await db.collection('proposals').doc(localId).get();
     assert.equal(stored.data().companyId, CO_A, 'tenant must come from the token, never the payload');
     assert.equal(stored.data().status, 'draft');
     assert.equal(stored.data().documentVersion, 1);
 
     // The internal record must carry the tenant, or the prospect path 404s.
-    const internal = await db.collection('proposalInternal').doc(proposalId).get();
+    const internal = await db.collection('proposalInternal').doc(localId).get();
     assert.equal(internal.data().companyId, CO_A, 'internal record must be tenant-stamped');
     assert.equal(internal.data().priceFloorMinor, 1_500_000);
   });
@@ -235,13 +260,26 @@ describe('access links', () => {
   let minted;
   let tokenHash;
 
-  it('mints a token, storing only its hash and honouring the origin pin', async () => {
+  /**
+   * Mint in a hook, not in a test body.
+   *
+   * Batched runs use `--test-name-pattern`, which skips the BODIES of non-matching
+   * tests but still runs hooks. When the mint lived in the first test, running any
+   * other test in this block alone left `minted` undefined and produced a
+   * confusing TypeError instead of a meaningful result. Declaration order is
+   * preserved, so the revoke test still runs last.
+   */
+  before(async () => {
     minted = await call(
       'mintAccessToken',
       { proposalId, label: 'Dashboard test link', expiresInDays: 30, allowedOrigins: [CHAT_ORIGIN] },
       admin.idToken,
     );
+    const listed = await call('listAccessTokens', { proposalId }, admin.idToken);
+    tokenHash = listed.tokens[0]?.tokenHash;
+  });
 
+  it('mints a token, storing only its hash and honouring the origin pin', async () => {
     assert.match(minted.token, /^bc_pk_/, 'plaintext token must be shown once, with its prefix');
 
     /**
@@ -260,7 +298,6 @@ describe('access links', () => {
 
     const listed = await call('listAccessTokens', { proposalId }, admin.idToken);
     assert.equal(listed.tokens.length, 1);
-    tokenHash = listed.tokens[0].tokenHash;
     assert.ok(tokenHash, 'the token hash must be listed');
 
     // The plaintext must not be recoverable from the database.
@@ -307,7 +344,8 @@ describe('access links', () => {
         documentVersion: terms.documentVersion,
       }),
     });
-    assert.equal(acceptRes.status, 200, `accept should succeed, got ${await acceptRes.text()}`);
+    // 201 Created: acceptance mints a new record (acceptance.ts res.status(201)).
+    assert.equal(acceptRes.status, 201, `accept should succeed, got ${await acceptRes.text()}`);
 
     // 4. The dashboard must now report the acceptance record.
     const analytics = await call('getProposalAnalytics', { proposalId }, admin.idToken);
