@@ -24,11 +24,22 @@ ui-debug.log
 # Project-scoped config that deliberately carries NO secrets (origins, model name).
 # Committed because Firebase reads it at deploy time. Never add a credential here.
 !functions/.env.buildclose-d4399
-# Same rule for the dashboard: public Firebase web config only (see the file's
-# own header). Without this negation `.env.*` above would silently drop it from
-# the repository, and the Netlify build would then fail on a missing API key with
-# no obvious cause.
-!apps/dashboard/.env.buildclose-d4399
+# The dashboard's environment is NOT committed. It carries the Firebase web API
+# key, which GitHub secret scanning reports as a "Google API Key". That key is a
+# public client identifier rather than a credential, but committing it on purpose
+# means permanently tolerating a standing alert, and the first real credential
+# added next to it would hide inside that noise.
+#
+# Configuration now comes from Netlify environment variables (deployed) or from
+# the gitignored `.env.local` (local development). `apps/dashboard/.env.example`
+# documents every variable with placeholders.
+#
+# Explicit negations for the examples, so a future `.env*` rule change cannot
+# silently drop the only documentation of the required variables.
+!apps/dashboard/.env.example
+!apps/agent/.env.example
+!apps/proposals/.env.example
+!functions/.env.example
 *.pem
 *.key
 serviceAccount*.json

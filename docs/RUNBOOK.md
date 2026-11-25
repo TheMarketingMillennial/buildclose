@@ -304,11 +304,18 @@ from framing the assistant invisibly over its own click targets.
 
 ```
 FIREBASE_PROJECT_ID=buildclose-d4399
-FIREBASE_API_KEY=AIzaSyBKUWWTyENnUHyCbK4Iq0DeJ7h19GoQwPU
+FIREBASE_API_KEY=AIzaSy_REPLACE_WITH_YOUR_WEB_API_KEY
 FIREBASE_APP_ID=1:761268855407:web:82c27b93240836a18da39a
 FIREBASE_STORAGE_BUCKET=buildclose-d4399.firebasestorage.app
 FIREBASE_AUTH_DOMAIN=buildclose-d4399.firebaseapp.com
 ```
+
+Get `FIREBASE_API_KEY` from Firebase console → Project settings → Your apps →
+the Web app → *SDK setup and configuration* → Config. It is a **public client
+identifier**, not a credential, and it ships to the browser either way — but it
+is supplied through Netlify rather than committed, so the repository does not
+carry a permanent secret-scanning alert. The full variable list with every
+placeholder is in `apps/dashboard/.env.example`.
 
 Optional overrides (defaults shown):
 

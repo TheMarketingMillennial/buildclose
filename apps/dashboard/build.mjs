@@ -17,14 +17,19 @@
  *     FUNCTIONS_BASE=http://127.0.0.1:5001/buildclose-dev/us-central1 \
  *     FIREBASE_API_KEY=fake FIREBASE_APP_ID=fake node build.mjs
  *
- * Configuration precedence mirrors the Cloud Functions convention, so there is
- * one rule to remember across the repo:
+ * Configuration precedence:
  *
- *     real process.env  >  .env.local  >  .env.<FIREBASE_PROJECT_ID>
+ *     real process.env  >  .env.local
  *
- * Real environment variables win so Netlify can override anything per deploy
- * without editing a committed file. `.env.local` wins over the project file so a
- * developer's emulator settings never leak into a production build.
+ * Real environment variables win so Netlify can supply everything per deploy.
+ * `.env.local` fills the gaps for local development and is gitignored.
+ *
+ * There is deliberately NO committed `.env.<projectId>` file for this app.
+ * It previously existed and carried the Firebase web API key. That key is a
+ * public client identifier rather than a credential, but committing it on
+ * purpose means permanently tolerating a GitHub secret-scanning alert — and the
+ * first real credential added next to it would hide inside that noise.
+ * `apps/dashboard/.env.example` documents every required variable instead.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -76,8 +81,8 @@ function loadEnvFile(name, root, locked) {
 const root = new URL('./', import.meta.url);
 // Real environment wins over every file, so Netlify can override per deploy.
 const locked = new Set(Object.keys(process.env));
-// Then the project file, then `.env.local` on top of it.
-loadEnvFile('.env.buildclose-d4399', root, locked);
+// Only `.env.local` is read. There is no committed project env file: see the
+// header note above. `locked` still applies so a shell variable beats the file.
 loadEnvFile('.env.local', root, locked);
 
 const projectId = process.env.FIREBASE_PROJECT_ID || 'buildclose-d4399';

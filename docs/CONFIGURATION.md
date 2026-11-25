@@ -37,15 +37,28 @@ functions:secrets:set NAME` from a variable that is already in the environment.
 
 ### 2a. Firebase web config (dashboard)
 
-Committed at `apps/dashboard/.env.buildclose-d4399`. Google designs these values to
-ship inside the browser bundle; anyone who opens `app.buildclose.app` reads them in
-`config.js`. The security boundary is the default-deny rules plus the custom-claims
-check inside every callable — never the secrecy of this file.
+**Not committed.** Supplied through Netlify environment variables for the
+`buildclose-app` site, or through the gitignored `apps/dashboard/.env.local`
+for local development. `apps/dashboard/.env.example` documents every variable
+with placeholders.
+
+These values are PUBLIC configuration — Google designs Firebase web config to
+ship inside the browser bundle, so anyone who opens `app.buildclose.app` can
+read them in `config.js`. The security boundary is the default-deny rules plus
+the custom-claims check inside every callable, never the secrecy of these values.
+
+They are kept out of git anyway, for a practical reason: committing an `AIzaSy…`
+string triggers GitHub secret scanning on every push, and permanently tolerating
+an alert means the first **real** credential added next to it would hide inside
+that noise.
+
+Get them from Firebase console → Project settings → Your apps → the Web app →
+*SDK setup and configuration* → Config.
 
 | Variable | Value for buildclose-d4399 | Required | Notes |
 | --- | --- | --- | --- |
 | `FIREBASE_PROJECT_ID` | `buildclose-d4399` | yes | |
-| `FIREBASE_API_KEY` | `AIzaSyBKUWWTyENnUHyCbK4Iq0DeJ7h19GoQwPU` | **yes** — build fails without it | Public client identifier. Not a credential. |
+| `FIREBASE_API_KEY` | `<from Firebase console>` — `AIzaSy…`, 39 chars | **yes** — build fails without it | Public client identifier. Not a credential. |
 | `FIREBASE_APP_ID` | `1:761268855407:web:82c27b93240836a18da39a` | **yes** — build fails without it | |
 | `FIREBASE_AUTH_DOMAIN` | `buildclose-d4399.firebaseapp.com` | recommended | Defaults to `<projectId>.firebaseapp.com` if absent. |
 | `FIREBASE_STORAGE_BUCKET` | `buildclose-d4399.firebasestorage.app` | **yes** — build fails without it | Newer `.firebasestorage.app` domain, not legacy `.appspot.com`. Needed to build download URLs for acceptance evidence. |
@@ -158,7 +171,7 @@ FUNCTIONS_REGION=us-central1
 **Netlify `buildclose-app` (5 required):**
 ```
 FIREBASE_PROJECT_ID=buildclose-d4399
-FIREBASE_API_KEY=AIzaSyBKUWWTyENnUHyCbK4Iq0DeJ7h19GoQwPU
+FIREBASE_API_KEY=AIzaSy_REPLACE_WITH_YOUR_WEB_API_KEY
 FIREBASE_APP_ID=1:761268855407:web:82c27b93240836a18da39a
 FIREBASE_STORAGE_BUCKET=buildclose-d4399.firebasestorage.app
 FIREBASE_AUTH_DOMAIN=buildclose-d4399.firebaseapp.com
