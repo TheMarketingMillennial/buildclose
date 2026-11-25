@@ -24,8 +24,16 @@ import { normaliseOrigin, type RuntimeConfig } from './config.js';
 import {
   AgentConfigInput,
   ProposalInternalInput,
+  AuthorityOverrides,
   type AiReply,
 } from './domain.js';
+import {
+  CompanyIntelligenceInput,
+  CommercialAuthorityInput,
+  effectiveAuthority,
+  mergeAgentKnowledge,
+  type EffectiveAuthority,
+} from './company.js';
 import type { PromptFacts } from './prompt.js';
 // Re-exported so existing callers keep working, but the implementation lives in
 // a dependency-free module shared with the seed script and staff functions.
@@ -41,6 +49,13 @@ export interface ProspectContext {
   proposal: ProposalRecord;
   agent: AgentConfigInput;
   internal: ProposalInternalInput;
+  /**
+   * The commercial authority actually in force, recomputed on every request from
+   * company policy plus any proposal override. This is what the prompt and the
+   * validator use — never `internal.maxDiscountPercent` directly, because that
+   * would bypass the company ceiling.
+   */
+  authority: EffectiveAuthority;
   facts: PromptFacts;
   /** Which CTAs are actually enabled, resolved server-side. */
   ctas: Array<{ id: string; label: string; url: string }>;
@@ -165,7 +180,52 @@ export async function resolveProspectContext(
     if (internalCompany !== session.cid) throw new AppError(404, 'not_found', 'Proposal not found');
   }
 
-  const ctas = agent.ctaLinks.filter((c) => c.enabled).map((c) => ({ id: c.id, label: c.label, url: c.url }));
+  /**
+   * Company-level records, read in parallel with nothing else depending on them.
+   *
+   * Both are optional: a company that has not configured its Intelligence Center
+   * must keep working exactly as it does today. A failed parse therefore falls
+   * back to null — inherit nothing — rather than throwing, because a malformed
+   * knowledge document must not take the prospect's chat down.
+   */
+  const [intelSnap, authoritySnap] = await Promise.all([
+    db.collection(COLLECTIONS.companyIntelligence).doc(session.cid).get(),
+    db.collection(COLLECTIONS.companyAuthority).doc(session.cid).get(),
+  ]);
+
+  const intelParsed = intelSnap.exists ? CompanyIntelligenceInput.safeParse(intelSnap.data()) : null;
+  const companyIntel = intelParsed?.success ? intelParsed.data : null;
+
+  const authorityParsed = authoritySnap.exists
+    ? CommercialAuthorityInput.safeParse(authoritySnap.data())
+    : null;
+  const companyAuthority = authorityParsed?.success ? authorityParsed.data : null;
+
+  /**
+   * Merge company knowledge into this proposal's assistant config.
+   *
+   * Done here, at the single chokepoint every prospect turn passes through, so
+   * there is no code path that reaches the model without the company's approved
+   * product facts, FAQ and objection playbook. Presentation stays the proposal's;
+   * knowledge is unioned.
+   */
+  const { merged: effectiveAgent } = mergeAgentKnowledge(companyIntel, agent);
+
+  /**
+   * Commercial authority in force. Computed on every request, never read from a
+   * cached field, so a company ceiling lowered five minutes ago binds the very
+   * next prospect message.
+   */
+  const overridesParsed = AuthorityOverrides.safeParse(
+    (internalSnap.data() as { authorityOverrides?: unknown } | undefined)?.authorityOverrides ?? {},
+  );
+  const authority = effectiveAuthority(
+    companyAuthority,
+    overridesParsed.success ? overridesParsed.data : null,
+    internal,
+  );
+
+  const ctas = effectiveAgent.ctaLinks.filter((c) => c.enabled).map((c) => ({ id: c.id, label: c.label, url: c.url }));
 
   const facts: PromptFacts = {
     companyName: String(companyData.name ?? 'the seller'),
@@ -191,8 +251,11 @@ export async function resolveProspectContext(
     companyName: facts.companyName,
     proposalId: session.pid,
     proposal,
-    agent,
+    // The MERGED agent, not the raw per-proposal config: company product facts,
+    // FAQ and objection playbook are already folded in at this point.
+    agent: effectiveAgent,
     internal,
+    authority,
     facts,
     ctas,
     retentionDays,

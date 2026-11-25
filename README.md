@@ -42,7 +42,48 @@ Three collections carry the security model:
 
 Supporting collections: `companies`, `users`, `agentConfigs`, `accessTokens`,
 `conversations` (+ `messages` subcollection), `acceptances`, `aiUsage`,
-`auditLog`, `rateLimits`, `subscriptions`.
+`auditLog`, `rateLimits`, `subscriptions`, `companyIntelligence`,
+`companyAuthority`.
+
+`companyIntelligence` holds the company-level knowledge edited once and reused
+across every proposal (profile, products/services, sales methodology, brand
+voice, objection playbook, FAQs, commercial policies, assistant defaults).
+`companyAuthority` holds the commercial authority: price floor, discount
+ceiling, negotiation permissions and boundaries. Both are one document per
+company, keyed by `companyId`.
+
+### Company intelligence and the tighten-only override rule
+
+A proposal may make commercial authority **stricter, never looser**. This is
+enforced twice, at two different times, because one enforcement point is not
+enough:
+
+1. **On write** — `authorityOverrideProblems()` rejects an override that would
+   lower the price floor or raise the discount ceiling, and the update callable
+   turns those problems into a `permission-denied` error so the author gets
+   feedback.
+2. **On every read** — `effectiveAuthority()` recomputes the binding limits from
+   the stored company record and the proposal record together, taking the
+   *tighter* of the two (higher floor, lower ceiling, union of negotiation
+   boundaries, permissions never widened). A record written by any other path —
+   a migration, a console edit, a future code path — still cannot loosen the
+   company limits at request time.
+
+`sanitiseQuotable()` additionally restricts the figures a proposal may quote to
+ones already authorised: the company quotable list, approved concession amounts,
+or the proposal's own discounts. A representative cannot introduce a quotable
+price the company never approved.
+
+`AuthorityOverrides` deliberately has **no defaults and every field optional**.
+`ProposalInternalInput` defaults `maxDiscountPercent` to `0`; reading that
+default as intent would make "the tighter of the two" resolve to zero for every
+proposal and silently disable commerce. Absence means inherit.
+
+Proposal agent config is seeded from `assistantDefaults` **at create time**,
+because `AgentConfigInput` defaults `displayName` — a read-time `||` fallback
+could never actually inherit. Knowledge merge (`mergeAgentKnowledge`) lets the
+proposal win on presentation while unioning safety rules, so a proposal can add
+a prohibited claim but never remove one.
 
 Money is stored as integer **minor units** with a `PRICING_VERSION`. The model
 never performs arithmetic on price.
@@ -176,6 +217,12 @@ internet-exposed; every other export is an authenticated callable.
 
 **Intelligence** — `getCompanyDashboard`, `getProposalAnalytics`,
 `listConversations`, `getConversation`, `getAuditLog`
+
+**Company intelligence** — `getCompanyIntelligence` (any staff role),
+`updateCompanyIntelligence` (admin / sales manager), `getCompanyAuthority`
+(admin / sales manager — representatives are refused outright rather than
+sent a redacted document, so the floor is never disclosed),
+`updateCompanyAuthority` (admin / sales manager)
 
 **Team** — `inviteStaff`, `setStaffRole`, `listStaff`, `bootstrapCompany`
 

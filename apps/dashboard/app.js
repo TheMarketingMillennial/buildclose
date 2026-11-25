@@ -43,6 +43,7 @@ import {
   toast,
   modal,
 } from './src/ui.js';
+import { viewIntelligence } from './src/intelligence.js';
 
 const appEl = document.getElementById('app');
 
@@ -199,6 +200,12 @@ function renderSignIn(errorMessage) {
 const NAV = [
   { href: '#/overview', label: 'Overview', icon: '◧', show: () => true },
   { href: '#/proposals', label: 'Proposals', icon: '▤', show: () => true },
+  /**
+   * Intelligence Center is visible to every staff role, because every role needs
+   * to READ the house voice and approved answers. The commercial-authority tab
+   * inside it is hidden for reps, and the server refuses them that data outright.
+   */
+  { href: '#/intelligence', label: 'Intelligence', icon: '◆', show: () => true },
   { href: '#/team', label: 'Team', icon: '◍', show: canManageTeam },
   { href: '#/audit', label: 'Audit log', icon: '≡', show: canAudit },
 ];
@@ -288,6 +295,7 @@ async function router() {
     if (route === 'proposals' && param === 'new') await createProposalView(view);
     else if (route === 'proposals' && param) await viewProposal(view, decodeURIComponent(param));
     else if (route === 'proposals') await viewProposals(view);
+    else if (route === 'intelligence') await viewIntelligence(view, { role: role() });
     else if (route === 'team') await viewTeam(view);
     else if (route === 'audit') await viewAudit(view);
     else await viewOverview(view);

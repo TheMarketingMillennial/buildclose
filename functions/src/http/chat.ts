@@ -134,7 +134,7 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
 
   // ---- 5. build prompt and call the model ----
   const history = await recentHistory(conversationId, 8);
-  const systemPrompt = buildSystemPrompt({ facts: ctx.facts, agent: ctx.agent, internal: ctx.internal });
+  const systemPrompt = buildSystemPrompt({ facts: ctx.facts, agent: ctx.agent, authority: ctx.authority });
   const userTurn = buildUserTurn(userMessage, history);
 
   let aiReply: AiReply;
@@ -165,11 +165,20 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
   }
 
   // ---- 6. commercial validation (requirement 5) ----
+  /**
+   * The validator is fed EFFECTIVE authority, not the proposal's own internals.
+   *
+   * This is the second of the two enforcement points. The prompt asks the model
+   * to respect company policy; this decides whether the reply is actually shown.
+   * If it read `ctx.internal` instead, a proposal document claiming a 50%
+   * ceiling would pass validation even when the company permits 10% — the prompt
+   * would say one thing and the gate would agree with the wrong number.
+   */
   const policy = {
     totalValueMinor: ctx.proposal.totalValueMinor,
     commencementMinor: ctx.proposal.commencementMinor,
-    approvedAmountsMinor: ctx.internal.approvedDiscounts.map((d) => d.amountMinor),
-    quotableAmountsMinor: ctx.internal.quotableAmountsMinor,
+    approvedAmountsMinor: ctx.authority.approvedDiscounts.map((d) => d.amountMinor),
+    quotableAmountsMinor: ctx.authority.quotableAmountsMinor,
     currency: 'USD' as const,
   };
 

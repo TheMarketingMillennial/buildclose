@@ -40,6 +40,10 @@ export const COLLECTIONS = {
   proposals: 'proposals',
   proposalInternal: 'proposalInternal', // sensitive: floors, playbooks, guardrails
   agentConfigs: 'agentConfigs',
+  /** Company-level knowledge, configured once and reused by every proposal. */
+  companyIntelligence: 'companyIntelligence',
+  /** Company-level commercial authority — floors, ceilings, permissions. */
+  companyAuthority: 'companyAuthority',
   accessTokens: 'accessTokens',
   conversations: 'conversations',
   messages: 'messages', // subcollection of conversations

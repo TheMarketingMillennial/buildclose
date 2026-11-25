@@ -10,7 +10,8 @@
  * boundaries, competitor posture). Those influence behaviour only indirectly,
  * through the boundary rules compiled here as policy text.
  */
-import { cents, type AgentConfigInput, type ProposalInternalInput } from './domain.js';
+import { cents, type AgentConfigInput } from './domain.js';
+import type { EffectiveAuthority } from './company.js';
 
 const DATA_OPEN = '<<<KNOWLEDGE_DATA';
 const DATA_CLOSE = 'KNOWLEDGE_DATA>>>';
@@ -31,8 +32,17 @@ export interface PromptFacts {
 export interface PromptContext {
   facts: PromptFacts;
   agent: AgentConfigInput;
-  /** Internal policy is compiled into boundaries, never quoted verbatim. */
-  internal: Pick<ProposalInternalInput, 'maxDiscountPercent' | 'approvedDiscounts'>;
+  /**
+   * Commercial authority IN FORCE for this proposal — company policy merged with
+   * any proposal tightening, recomputed per request.
+   *
+   * Note what is absent: the raw internal record. Price floor and competitor
+   * posture still never reach the model. Only the ceiling and the pre-approved
+   * concession list are compiled into boundary text, exactly as before — the
+   * difference is that these values now come from the effective merge rather
+   * than from a single proposal document that could exceed company policy.
+   */
+  authority: Pick<EffectiveAuthority, 'maxDiscountPercent' | 'approvedDiscounts' | 'negotiable'>;
 }
 
 /** Strip control characters and collapse runaway whitespace in untrusted text. */
@@ -49,14 +59,32 @@ function bullet(items: string[], max = 40): string {
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
-  const { facts, agent, internal } = ctx;
+  const { facts, agent, authority } = ctx;
   const ctas = facts.enabledCtas.map((c) => `- ${c.id}: "${sanitiseUntrusted(c.label, 80)}"`).join('\n');
 
-  const discountRule =
-    internal.maxDiscountPercent > 0 && internal.approvedDiscounts.length > 0
-      ? `The only concessions permitted are these pre-approved options. If a prospect asks for anything else, say it needs your representative's approval:\n` +
-        bullet(internal.approvedDiscounts.map((d) => `${d.label} — ${cents(d.amountMinor)}${d.conditions ? ` (${d.conditions})` : ''}`))
-      : `No discounts are authorised on this proposal. If asked, say pricing is fixed and offer to connect the representative.`;
+  /**
+   * The concession rule is derived from authority in force, and it must fail
+   * closed in every direction:
+   *
+   *   - permissions say discounts are not allowed  -> no concession at all
+   *   - ceiling is 0                                -> no concession at all
+   *   - no pre-approved amounts                     -> no concession at all
+   *
+   * Only when all three line up does the model see a concession list. Note the
+   * ceiling is stated as a percentage without revealing the absolute price floor:
+   * the floor is the number that must never reach a prospect, and a percentage
+   * gives the model enough to refuse without disclosing it.
+   */
+  const conceding = authority.negotiable.canOfferDiscounts && authority.maxDiscountPercent > 0;
+  const discountRule = conceding && authority.approvedDiscounts.length > 0
+    ? `The only concessions permitted are these pre-approved options. If a prospect asks for anything else, say it needs your representative's approval:\n` +
+      bullet(
+        authority.approvedDiscounts.map(
+          (d: { label: string; amountMinor: number; conditions: string }) =>
+            `${d.label} — ${cents(d.amountMinor)}${d.conditions ? ` (${d.conditions})` : ''}`,
+        ),
+      )
+    : `No discounts, fee waivers or price adjustments are authorised on this proposal. If asked, say pricing is fixed and offer to connect the representative.`;
 
   return `You are ${sanitiseUntrusted(agent.displayName, 80)}, the sales assistant for ${sanitiseUntrusted(
     facts.companyName,

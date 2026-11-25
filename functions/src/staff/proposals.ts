@@ -11,7 +11,13 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 import { db, COLLECTIONS, FieldValue, type Role } from '../lib/firebase.js';
 import { requireStaff, requireRole, assertProposalAccess, identifyTenantMismatch, PROPOSAL_ROLES, CONFIG_ROLES } from './auth.js';
-import { ProposalInput, ProposalInternalInput, AgentConfigInput } from '../lib/domain.js';
+import { ProposalInput, ProposalInternalInput, AgentConfigInput, AuthorityOverrides } from '../lib/domain.js';
+import {
+  CommercialAuthorityInput,
+  CompanyIntelligenceInput,
+  authorityOverrideProblems,
+  effectiveAuthority,
+} from '../lib/company.js';
 import { mintProposalToken } from '../lib/tokens.js';
 import { hashProposalDocument } from '../lib/context.js';
 import { audit } from '../lib/audit.js';
@@ -76,15 +82,37 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
     documentHash: '',
   } as never);
 
+  /**
+   * Seed the assistant config from COMPANY INTELLIGENCE, not from literals.
+   *
+   * Why this is not just a convenience: `AgentConfigInput` gives `displayName`
+   * a default of 'Proposal Assistant' and `persona` a default string, so parsing
+   * an empty payload always produces those values. A read-time merge cannot tell
+   * them apart from a deliberate choice — `agent.displayName || companyDefault`
+   * would always take the literal, and the company's configured assistant name
+   * would never appear on any proposal. Materialising the company defaults HERE,
+   * where absence is still meaningful, is what makes "configure once" real.
+   *
+   * Precedence: caller-supplied fields win, company defaults fill the rest. A
+   * rep creating a proposal without an agent block inherits house settings
+   * without needing CONFIG_ROLES — inheriting is not configuring.
+   */
+  const intelSnap = await db.collection(COLLECTIONS.companyIntelligence).doc(identity.companyId).get();
+  const intelParsed = intelSnap.exists ? CompanyIntelligenceInput.safeParse(intelSnap.data()) : null;
+  const assistantDefaults = intelParsed?.success ? intelParsed.data.assistantDefaults : null;
+
+  const agentSeed = {
+    ...(assistantDefaults ?? {}),
+    ...(agent ?? {}),
+    ctaLinks: agent?.ctaLinks ?? [],
+  };
+
   const batch = db.batch();
   batch.set(ref, record);
 
   // Defaults: agent config must exist so the prospect chat always has something
   // valid to load; internal record defaults to "no discount authority".
-  batch.set(
-    db.collection(COLLECTIONS.agentConfigs).doc(ref.id),
-    AgentConfigInput.parse({ ...(agent ?? {}), ctaLinks: agent?.ctaLinks ?? [] }),
-  );
+  batch.set(db.collection(COLLECTIONS.agentConfigs).doc(ref.id), AgentConfigInput.parse(agentSeed));
     batch.set(
       db.collection(COLLECTIONS.proposalInternal).doc(ref.id),
       /**
@@ -150,8 +178,50 @@ export const getProposal = onCall({ region: REGION }, async (request) => {
     internal,
     /** Whether the caller may edit pricing internals — drives the UI. */
     canEditInternal: INTERNAL_READ_ROLES.includes(identity.role),
+    /**
+     * What commercial authority is ACTUALLY in force, and which parts of the
+     * proposal's own request were overridden by company policy.
+     *
+     * A manager who stores `maxDiscountPercent: 50` while the company permits 10
+     * needs to see that 10 is what binds — otherwise they believe a number that
+     * is not real and discover the truth in front of a prospect. `tightened`
+     * names those fields explicitly. Empty means the proposal's own values stand.
+     *
+     * Only returned to roles that may read internals at all: `effective` reveals
+     * the same figures `internal` does, so it must not widen the audience.
+     */
+    effectiveAuthority: internal ? await loadEffectiveAuthority(identity.companyId, internal) : null,
   };
 });
+
+/**
+ * Compute effective authority for a staff-facing read.
+ *
+ * Deliberately a separate helper rather than inlining into getProposal, because
+ * it must tolerate a missing company authority record (legacy tenants) and a
+ * malformed one without failing the whole proposal read.
+ */
+async function loadEffectiveAuthority(
+  companyId: string,
+  internal: Record<string, unknown>,
+) {
+  const [authoritySnap] = await Promise.all([
+    db.collection(COLLECTIONS.companyAuthority).doc(companyId).get(),
+  ]);
+  const parsedCompany = authoritySnap.exists
+    ? CommercialAuthorityInput.safeParse(authoritySnap.data())
+    : null;
+  const parsedInternal = ProposalInternalInput.safeParse(internal);
+  const overrides = AuthorityOverrides.safeParse(
+    (internal as { authorityOverrides?: unknown }).authorityOverrides ?? {},
+  );
+
+  return effectiveAuthority(
+    parsedCompany?.success ? parsedCompany.data : null,
+    overrides.success ? overrides.data : null,
+    parsedInternal.success ? parsedInternal.data : null,
+  );
+}
 
 // ------------------------------------------------------------------- list
 export const listProposals = onCall({ region: REGION }, async (request) => {
@@ -238,6 +308,37 @@ export const updateProposal = onCall({ region: REGION }, async (request) => {
 
   if (internal && Object.keys(internal).length > 0) {
     requireRole(identity, CONFIG_ROLES);
+
+    /**
+     * A proposal-level override may TIGHTEN company authority, never loosen it.
+     *
+     * Rejected here so the manager gets told at the moment of editing. The
+     * enforcement that actually matters is `effectiveAuthority()`, which
+     * recomputes the stricter value on every prospect turn — this is the error
+     * message, not the guarantee.
+     *
+     * Only checked when the caller is actually changing an authority value; a
+     * patch that leaves these fields alone must not be blocked by a floor the
+     * proposal already sat above.
+     */
+    const touchesAuthority =
+      internal.priceFloorMinor !== undefined || internal.maxDiscountPercent !== undefined;
+    if (touchesAuthority) {
+      const authoritySnap = await db.collection(COLLECTIONS.companyAuthority).doc(identity.companyId).get();
+      if (authoritySnap.exists) {
+        const parsedAuthority = CommercialAuthorityInput.safeParse(authoritySnap.data());
+        if (parsedAuthority.success) {
+          const problems = authorityOverrideProblems(parsedAuthority.data, {
+            priceFloorMinor: internal.priceFloorMinor,
+            maxDiscountPercent: internal.maxDiscountPercent,
+          });
+          if (problems.length > 0) {
+            throw new HttpsError('permission-denied', problems.join(' '));
+          }
+        }
+      }
+    }
+
     batch.set(
       db.collection(COLLECTIONS.proposalInternal).doc(id),
       { ...internal, companyId: identity.companyId, updatedAt: FieldValue.serverTimestamp() },

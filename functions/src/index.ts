@@ -66,6 +66,13 @@ export {
 
 export { inviteStaff, setStaffRole, listStaff, bootstrapCompany } from './staff/team.js';
 
+export {
+  getCompanyIntelligence,
+  updateCompanyIntelligence,
+  getCompanyAuthority,
+  updateCompanyAuthority,
+} from './staff/company.js';
+
 export { createCheckoutSession, stripeWebhook } from './staff/stripe.js';
 
 // ------------------------------------------------------------------- jobs

@@ -106,7 +106,23 @@ export const AgentConfigInput = z.object({
 export type AgentConfigInput = z.infer<typeof AgentConfigInput>;
 
 // ---------------------------------------- internal record (NEVER sent to prospect)
-// Requirement 4: kept in a separate document with no client read path at all.
+/**
+ * A per-proposal tightening of company commercial authority.
+ *
+ * EVERY FIELD IS OPTIONAL WITH NO DEFAULT, deliberately. The record below
+ * defaults `maxDiscountPercent` to 0, so a proposal created without explicit
+ * internals looks identical to one where a manager deliberately set "no
+ * discount". Reading that default as intent would make "stricter of the two"
+ * resolve to 0% for every such proposal and silently kill company authority.
+ * Absence here means "inherit company authority"; only a value somebody actually
+ * wrote can tighten anything.
+ */
+export const AuthorityOverrides = z.object({
+  priceFloorMinor: z.number().int().nonnegative().optional(),
+  maxDiscountPercent: z.number().min(0).max(100).optional(),
+});
+export type AuthorityOverrides = z.infer<typeof AuthorityOverrides>;
+
 export const ProposalInternalInput = z.object({
   /**
    * Defaults are deliberate, and they are the SAFE direction.
@@ -138,6 +154,8 @@ export const ProposalInternalInput = z.object({
    * an offer, and the prompt treats the two differently.
    */
   quotableAmountsMinor: z.array(z.number().int().nonnegative()).max(40).default([]),
+  /** Proposal-specific tightening of company authority; absent means inherit. */
+  authorityOverrides: AuthorityOverrides.optional(),
 });
 export type ProposalInternalInput = z.infer<typeof ProposalInternalInput>;
 

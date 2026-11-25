@@ -15,6 +15,8 @@ export type AuditAction =
   | 'proposal.duplicated'
   | 'proposal.archived'
   | 'agent.updated'
+  | 'company.intelligence_updated'
+  | 'company.authority_updated'
   | 'token.minted'
   | 'token.revoked'
   | 'session.minted'
