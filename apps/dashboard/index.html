@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>BuildClose</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <!--
+      config.js is generated at build time by build.mjs from Netlify environment
+      variables. It contains only public identifiers (Firebase web config), never
+      a secret. Loading it before the module graph means window.__BC_CONFIG__ is
+      already populated when api.js evaluates.
+    -->
+    <script src="/config.js"></script>
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <!--
+      The authenticated shell is rendered by app.js. This static markup is the
+      pre-auth state: it is what a visitor sees before any session exists, and it
+      contains no tenant data.
+    -->
+    <div id="app" class="app-shell">
+      <div class="boot" role="status">
+        <span class="dot"></span>
+        <span>Starting…</span>
+      </div>
+    </div>
+    <noscript>
+      <p style="padding: 2rem; font-family: system-ui, sans-serif">
+        This dashboard requires JavaScript.
+      </p>
+    </noscript>
+  </body>
+</html>

@@ -261,6 +261,57 @@ export const getProposalAnalytics = onCall({ region: REGION }, async (request) =
 });
 
 /**
+ * List the conversations on one proposal.
+ *
+ * `getProposalAnalytics` deliberately returns only a COUNT of conversations, so
+ * without this callable the dashboard would know a prospect had chatted but
+ * would have no id to open. The transcript body is not included here — only
+ * metadata — so opening a thread remains an explicit second call that re-checks
+ * access, and listing many conversations stays cheap.
+ *
+ * Scoping mirrors getConversation exactly: tenant mismatch is a 404 (not 403), so
+ * the response never confirms the existence of another tenant's data, and a
+ * sales_rep only ever sees conversations on proposals they own.
+ */
+export const listConversations = onCall({ region: REGION }, async (request) => {
+  const identity = requireStaff(request);
+  const parsed = z.object({ proposalId: z.string().min(1) }).safeParse(request.data);
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Missing proposal id');
+
+  const propSnap = await db.collection(COLLECTIONS.proposals).doc(parsed.data.proposalId).get();
+  if (!propSnap.exists) throw new HttpsError('not-found', 'Proposal not found');
+  assertProposalAccess(identity, propSnap.data() as { companyId?: string; ownerUid?: string });
+
+  const snap = await db
+    .collection(COLLECTIONS.conversations)
+    .where('proposalId', '==', parsed.data.proposalId)
+    .limit(100)
+    .get();
+
+  const rows = snap.docs
+    .filter((d) => !identifyTenantMismatch(identity, d.data() as { companyId?: string }))
+    .map((d) => {
+      const c = d.data() as {
+        status?: string;
+        messageCount?: number;
+        startedAt?: { toMillis?: () => number };
+        lastMessageAt?: { toMillis?: () => number };
+      };
+      return {
+        id: d.id,
+        status: c.status ?? 'open',
+        messageCount: Number(c.messageCount ?? 0),
+        startedAt: c.startedAt?.toMillis?.() ?? null,
+        lastMessageAt: c.lastMessageAt?.toMillis?.() ?? null,
+      };
+    })
+    // Newest activity first; conversations with no timestamp sort last.
+    .sort((a, b) => (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0));
+
+  return { conversations: rows };
+});
+
+/**
  * Conversation transcript for staff review.
  * Reps may only read conversations on their own proposals.
  */

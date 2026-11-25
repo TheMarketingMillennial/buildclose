@@ -59,6 +59,7 @@ export {
 export {
   getCompanyDashboard,
   getProposalAnalytics,
+  listConversations,
   getConversation,
   getAuditLog,
 } from './staff/intelligence.js';
