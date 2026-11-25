@@ -15,7 +15,8 @@
     "lint": "npm --workspace functions run typecheck"
   },
   "devDependencies": {
-    "firebase-tools": "^15.37.0"
+    "firebase-tools": "^15.37.0",
+    "playwright": "^1.49.1"
   },
   "engines": {
     "node": ">=20"

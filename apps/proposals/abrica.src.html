@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Proposal — Abrica · The Marketing Millennial</title>
+<meta name="description" content="A branded intake and case workspace for personal injury firms, billed per case. Prepared for Hector Abrica." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#F6F4EF; --paper-mid:#EEEBE3; --paper-dark:#E3DFD5;
+    --ink:#1A1A17; --ink-soft:#38382F; --ink-muted:#68685E; --ink-faint:#9A9A8E;
+    --gold:#8A6B3C; --gold-pale:#F0E6D0; --gold-light:#B48C4C;
+    --green:#2F5D45; --green-pale:#E6EFE9;
+    --dark:#111109; --dark-2:#18180F; --dark-3:#1F1F14;
+    --dark-text:#EDE9DF; --dark-muted:rgba(237,233,223,.62); --dark-rule:rgba(237,233,223,.16);
+    --rule:rgba(26,26,23,.14); --rule-soft:rgba(26,26,23,.08);
+    --serif:"EB Garamond",Garamond,"Times New Roman",serif;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:16.5px;line-height:1.72;font-weight:400}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 44px}
+  section{scroll-margin-top:20px}
+
+  /* masthead */
+  .top{border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:40;
+    background:rgba(246,244,239,.95);backdrop-filter:blur(10px)}
+  .top .inner{display:flex;align-items:center;justify-content:space-between;padding:15px 0;gap:24px}
+  .mark{font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;font-weight:600;line-height:1.5}
+  .mark span{display:block;font-weight:400;letter-spacing:.14em;color:var(--ink-faint);font-size:9px;margin-top:3px}
+  .top .meta{display:flex;align-items:center;gap:22px;font-size:9.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-faint);font-weight:500}
+  .top .go{border:1px solid var(--ink);padding:9px 16px;color:var(--ink);text-decoration:none;
+    letter-spacing:.14em;font-weight:600;transition:.2s;white-space:nowrap}
+  .top .go:hover{background:var(--ink);color:var(--paper)}
+
+  /* type */
+  .kicker{display:flex;align-items:center;gap:13px;font-size:10.5px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:26px}
+  .kicker::before{content:"";width:30px;height:1px;background:var(--gold);flex:none}
+  .display{font-family:var(--serif);font-weight:400;line-height:1.04;letter-spacing:-.018em;
+    margin:0;font-size:clamp(38px,5.2vw,64px)}
+  .display em{font-style:italic}
+  .h2{font-family:var(--serif);font-weight:400;line-height:1.1;letter-spacing:-.015em;
+    margin:0 0 22px;font-size:clamp(29px,3.5vw,43px)}
+  .h2 em{font-style:italic}
+  .h3{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink);margin:36px 0 12px}
+  .lede{font-size:18.5px;line-height:1.65;color:var(--ink-soft);max-width:62ch}
+  p{margin:0 0 18px;max-width:72ch}
+  .small{font-size:14px;line-height:1.66;color:var(--ink-muted);max-width:68ch}
+  strong{font-weight:600;color:var(--ink)}
+
+  .hero{padding:84px 0 72px}
+  .hero .display{max-width:18ch}
+  .hero .sub{font-size:19px;line-height:1.62;color:var(--ink-soft);max-width:56ch;margin:30px 0 0}
+  .hero .note{margin-top:38px;padding-top:22px;border-top:1px solid var(--rule);
+    display:flex;gap:16px;flex-wrap:wrap;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);font-weight:500}
+  .hero .note i{width:4px;height:4px;background:var(--gold);border-radius:50%;display:inline-block;margin:0 12px 2px 0}
+
+  /* bands */
+  .band{padding:84px 0}
+  .band.mid{background:var(--paper-mid)}
+  .band.dark{background:var(--dark);color:var(--dark-text)}
+  .band.dark .h2,.band.dark strong{color:var(--dark-text)}
+  .band.dark .lede,.band.dark p{color:var(--dark-muted)}
+  .band.dark .kicker{color:var(--gold-light)}
+  .band.dark .kicker::before{background:var(--gold-light)}
+
+  .split{display:grid;grid-template-columns:215px 1fr;gap:54px;align-items:start}
+  .split .label{font-family:var(--serif);font-size:15px;color:var(--gold);padding-top:8px}
+  .split .label span{display:block;font-family:var(--sans);font-size:9.5px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--ink-faint);margin-bottom:8px}
+
+  .pull{font-family:var(--serif);font-size:26px;line-height:1.42;font-style:italic;
+    color:var(--ink);border-left:2px solid var(--gold);padding:2px 0 2px 30px;margin:36px 0;max-width:56ch}
+  .band.dark .pull{color:var(--dark-text);border-color:var(--gold-light)}
+
+  /* three layer cards */
+  .layers{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:44px;border-top:1px solid var(--rule)}
+  .layers > div{padding:26px 28px 0 0;border-right:1px solid var(--rule)}
+  .layers > div:last-child{border-right:0;padding-right:0}
+  .layers > div + div{padding-left:28px}
+  .layers .no{font-family:var(--serif);font-size:13px;color:var(--gold);letter-spacing:.1em;
+    margin-bottom:14px;display:block}
+  .layers h4{font-family:var(--serif);font-size:21px;font-weight:400;margin:0 0 10px;line-height:1.3}
+  .layers p{font-size:14.5px;line-height:1.68;color:var(--ink-muted);margin:0}
+  .layers .inc{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--gold);margin-top:12px;display:block;font-weight:600}
+
+  /* steps */
+  .steps{margin-top:52px;border-top:1px solid var(--dark-rule)}
+  .step{display:grid;grid-template-columns:72px 1fr 240px;gap:34px;padding:26px 0;
+    border-bottom:1px solid var(--dark-rule);align-items:start}
+  .step .no{font-family:var(--serif);font-size:15px;color:var(--gold-light);letter-spacing:.06em;padding-top:3px}
+  .step h4{font-family:var(--serif);font-size:23px;font-weight:400;margin:0 0 6px;line-height:1.25;color:var(--dark-text)}
+  .step p{margin:0;font-size:15px;line-height:1.7;color:var(--dark-muted);max-width:52ch}
+  .step .out{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--gold-light);
+    line-height:1.8;padding-top:4px;border-left:1px solid var(--dark-rule);padding-left:22px}
+  .closer{margin-top:46px;font-family:var(--serif);font-size:24px;line-height:1.5;
+    color:var(--dark-text);font-style:italic;max-width:44ch}
+
+  /* portal mockup */
+  .portal{border:1px solid var(--rule);background:#fff;margin:44px 0 10px;
+    box-shadow:0 24px 60px -30px rgba(26,26,23,.28);overflow:hidden}
+  .portal .bar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:14px 22px;border-bottom:1px solid var(--rule);background:var(--paper-mid)}
+  .portal .brand{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+    font-weight:600;color:var(--ink)}
+  .portal .brand i{font-style:normal;color:var(--gold)}
+  .portal .pow{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);font-weight:500}
+  .portal .body{padding:0}
+  .portal .hello{padding:26px 26px 0}
+  .portal .hi{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);
+    font-weight:600;margin-bottom:8px}
+  .portal .who{font-family:var(--serif);font-size:26px;line-height:1.2;letter-spacing:-.01em}
+  .counters{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+    margin:22px 26px 0;border:1px solid var(--rule)}
+  .counters > div{background:#fff;padding:14px 16px}
+  .counters .n{font-family:var(--serif);font-size:28px;line-height:1;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums}
+  .counters .k{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);
+    margin-top:7px;font-weight:600}
+  .pnav{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+    border-top:1px solid var(--rule);margin-top:26px}
+  .pnav > div{background:var(--paper);padding:14px 18px;font-size:11.5px;color:var(--ink-soft);
+    letter-spacing:.02em}
+  .pnav > div b{display:block;font-weight:600;color:var(--ink);font-size:12px;margin-bottom:2px}
+  .pnav > div.on{background:var(--brand-soft,#E6EFE9)}
+  .cap{font-size:12px;color:var(--ink-faint);letter-spacing:.02em;margin-top:12px}
+  .cap b{color:var(--ink-soft);font-weight:600}
+
+  /* case workspace */
+  .casetabs{display:flex;gap:0;border-bottom:1px solid var(--rule);margin:30px 0 0;flex-wrap:wrap}
+  .casetabs span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+    color:var(--ink-faint);padding:10px 16px;border-bottom:2px solid transparent}
+  .casetabs span.on{color:var(--ink);border-bottom-color:var(--gold)}
+  .casegrid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--rule);
+    border-top:0;background:#fff}
+  .casegrid > div{padding:18px 22px;border-bottom:1px solid var(--rule-soft)}
+  .casegrid > div:nth-child(odd){border-right:1px solid var(--rule-soft)}
+  .casegrid h5{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+    font-weight:600;margin:0 0 5px}
+  .casegrid p{font-size:13.5px;line-height:1.6;color:var(--ink-muted);margin:0;max-width:none}
+
+  /* calculator */
+  .calc{margin-top:44px;border:1px solid var(--dark-rule);background:var(--dark-2)}
+  .calc .head{display:flex;justify-content:space-between;align-items:center;gap:16px;
+    padding:15px 26px;border-bottom:1px solid var(--dark-rule)}
+  .calc .head .t{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-light);font-weight:600}
+  .calc .head .s{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:rgba(237,233,223,.38)}
+  .calc .body{padding:34px 30px 30px;display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .calc .controls{padding-right:38px;border-right:1px solid var(--dark-rule)}
+  .cgrid{display:grid;gap:28px}
+  .cg label{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+    font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:rgba(237,233,223,.5);
+    font-weight:600;margin-bottom:13px}
+  .cg output{font-family:var(--serif);font-size:25px;letter-spacing:0;text-transform:none;
+    color:var(--dark-text);font-weight:400;line-height:1}
+  .cg .hint{font-size:11px;color:rgba(237,233,223,.34);letter-spacing:.03em;margin-top:9px;
+    text-transform:none;line-height:1.5}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:2px;
+    background:rgba(237,233,223,.22);outline:none;cursor:pointer;margin:0}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--gold-light);cursor:pointer;border:3px solid var(--dark-2);box-shadow:0 0 0 1px var(--gold-light)}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--gold-light);
+    cursor:pointer;border:3px solid var(--dark-2);box-shadow:0 0 0 1px var(--gold-light)}
+  .calc .outs{padding-left:38px}
+  .out .lab{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(237,233,223,.45);
+    font-weight:600;margin-bottom:7px}
+  .out .big{font-family:var(--serif);font-size:clamp(34px,4vw,46px);line-height:1.06;letter-spacing:-.02em;
+    color:var(--dark-text);font-variant-numeric:tabular-nums}
+  .out .big small{font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-light);
+    margin-left:8px;font-family:var(--sans)}
+  .outrow{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    padding:14px 0;border-top:1px solid var(--dark-rule)}
+  .outrow .k{font-size:13px;color:var(--dark-muted)}
+  .outrow .v{font-family:var(--serif);font-size:19px;color:var(--dark-text);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .calc .foot{padding:16px 26px;border-top:1px solid var(--dark-rule);font-size:11.5px;
+    line-height:1.6;color:rgba(237,233,223,.4)}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin:10px 0 20px;font-size:14.5px}
+  th{text-align:left;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint);
+    font-weight:600;padding:0 16px 11px 0;border-bottom:1px solid var(--ink);vertical-align:bottom}
+  td{padding:14px 16px 14px 0;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.55}
+  th:last-child,td:last-child{padding-right:0;text-align:right}
+  tbody tr.total td{border-bottom:1px solid var(--ink);font-weight:600}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .band.dark table th{color:rgba(237,233,223,.4);border-bottom-color:rgba(237,233,223,.3)}
+  .band.dark table td{border-bottom-color:var(--dark-rule);color:var(--dark-text)}
+  .band.dark tbody tr.total td{border-bottom-color:rgba(237,233,223,.3)}
+
+  .aside{background:var(--green-pale);padding:22px 26px;margin:26px 0;font-size:15.5px;line-height:1.68}
+  .aside p:last-child{margin-bottom:0}
+  .aside .h{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--green);
+    font-weight:600;margin-bottom:9px}
+
+  .gain{background:var(--gold-pale);border-left:3px solid var(--gold);padding:24px 28px;margin:30px 0;
+    font-size:16px;line-height:1.68}
+  .gain .h{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);
+    font-weight:600;margin-bottom:11px}
+  .gain p:last-child{margin-bottom:0}
+  .gain .quote{font-family:var(--serif);font-size:23px;line-height:1.46;color:var(--ink);max-width:52ch}
+
+  .figrow{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule);
+    border:1px solid var(--rule);margin:34px 0 38px}
+  .figrow > div{background:var(--paper);padding:26px 28px}
+  .figrow .l{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);
+    font-weight:600;margin-bottom:9px}
+  .figrow .v{font-family:var(--serif);font-size:40px;line-height:1.05;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums}
+  .figrow .s{font-size:12.5px;color:var(--ink-muted);margin-top:7px;line-height:1.55}
+
+  .need ol{margin:0;padding:0;list-style:none;counter-reset:n}
+  .need li{counter-increment:n;position:relative;padding:19px 0 19px 54px;border-bottom:1px solid var(--rule);
+    font-size:15.5px;line-height:1.65}
+  .need li::before{content:counter(n,decimal-leading-zero);position:absolute;left:0;top:19px;
+    font-family:var(--serif);font-size:14px;color:var(--gold);letter-spacing:.06em}
+  .need li:first-child{border-top:1px solid var(--rule)}
+  .need b{font-weight:600}
+
+  .signblock{padding:84px 0 0}
+  .signrow{display:grid;grid-template-columns:1fr 200px;gap:44px;margin-top:44px}
+  .line{border-bottom:1px solid var(--ink-soft);height:46px}
+  .scap{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);
+    padding-top:10px;line-height:1.6}
+  .fine{margin-top:50px;padding-top:24px;border-top:1px solid var(--rule);font-size:12px;
+    line-height:1.72;color:var(--ink-muted);max-width:80ch}
+  footer{margin-top:52px;border-top:1px solid var(--rule);padding:24px 0 46px;display:flex;
+    justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:9.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-faint)}
+
+  @media (max-width:940px){
+    .split{grid-template-columns:1fr;gap:20px}
+    .step{grid-template-columns:50px 1fr;gap:20px}
+    .step .out{grid-column:2;border-left:0;padding-left:0;padding-top:10px}
+    .casegrid{grid-template-columns:1fr}
+    .casegrid > div:nth-child(odd){border-right:0}
+    .calc .body{grid-template-columns:1fr}
+    .calc .controls{padding-right:0;border-right:0;border-bottom:1px solid var(--dark-rule);padding-bottom:30px}
+    .calc .outs{padding-left:0;padding-top:28px}
+    .pnav{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:680px){
+    .wrap{padding:0 22px}
+    .band{padding:58px 0}
+    .hero{padding:52px 0 48px}
+    .layers{grid-template-columns:1fr}
+    .layers > div{border-right:0;padding:22px 0;border-bottom:1px solid var(--rule)}
+    .layers > div + div{padding-left:0}
+    .counters{grid-template-columns:1fr 1fr;margin-left:16px;margin-right:16px}
+    .figrow{grid-template-columns:1fr}
+    .top .meta{display:none}
+    .signrow{grid-template-columns:1fr;gap:26px}
+    .portal .hello{padding:20px 16px 0}
+  }
+
+  /* Responsive tables + grid shrink.
+     A grid/flex child defaults to min-width:auto and will not shrink below its
+     content's intrinsic width, so one wide table forced every .split column past
+     the phone viewport. min-width:0 lets the column shrink, and the wrapper
+     scrolls the table inside it instead of the page. */
+  .split > *,.calc .body > *,.casegrid > *{min-width:0}
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+  .tablewrap table{margin:10px 0 20px}
+  @media (max-width:680px){
+    .tablewrap{overflow-x:auto}
+    .tablewrap table{min-width:520px}
+    .tablewrap th,.tablewrap td{white-space:normal}
+  }
+
+  /* proposal actions — native acceptance + payment */
+  .act{margin-top:34px;padding-top:26px;border-top:1px solid var(--rule)}
+  .act .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .act .btn{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;padding:15px 27px;border:1px solid var(--ink);
+    background:var(--ink);color:var(--paper);cursor:pointer;text-decoration:none;
+    display:inline-block;transition:.2s;line-height:1}
+  .act .btn:hover{background:transparent;color:var(--ink)}
+  .act .btn.pay{background:transparent;color:var(--ink)}
+  .act .btn.pay:hover{background:var(--ink);color:var(--paper)}
+  .act .btn:focus-visible,.act .btn.pay:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+  .act .note{margin-top:20px;font-size:12px;line-height:1.62;color:var(--ink-muted);max-width:58ch}
+  .act .note strong{color:var(--ink-soft)}
+  @media(max-width:640px){.act .btn{width:100%;text-align:center}.act .row{flex-direction:column;align-items:stretch}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="wrap inner">
+    <div class="mark">The Marketing Millennial<span>Strategy · Research · Platforms</span></div>
+    <div class="meta">
+      <span>Proposal</span>
+      <span>24 November 2026</span>
+      <a class="go" href="#proceed">To proceed</a>
+    </div>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Abrica · Prepared for Hector Abrica</div>
+    <h1 class="display">The intake becomes<br>a case. Then it <em>stays</em> yours.</h1>
+    <p class="sub">A branded intake and case workspace that law firms pay for every month, per case they manage in it. The client completes intake on the firm's own page, signs the retainer on the same screen, and the case opens with its documents already attached.</p>
+    <div class="note">
+      <span><i></i>The product</span>
+      <span><i></i>What a firm sees</span>
+      <span><i></i>How it earns</span>
+      <span><i></i>Investment, at the end</span>
+    </div>
+  </div>
+</header>
+
+<section class="band mid" id="gap">
+  <div class="wrap split">
+    <div class="label"><span>01</span>The gap</div>
+    <div>
+      <h2 class="h2">A form collects answers.<br>It doesn't hold a <em>case.</em></h2>
+      <p class="lede">You take client intakes through Google Forms today, and there is no system for onboarding a client once the form has been submitted. The form captures the information. What happens next is arranged by hand.</p>
+      <p>That is not a criticism of how you work — it is what a form is. It collects, and then it forgets. A client relationship needs documents, a signature, a record of what was agreed, and somewhere for all of it to live while the matter is open.</p>
+
+      <div class="layers">
+        <div>
+          <span class="no">i.</span>
+          <h4>The hour after they submit</h4>
+          <p>Someone filling in an injury enquiry is willing to act right now. By tomorrow they have spoken to another firm, or to a friend who told them to wait. The form has no way to hold that hour.</p>
+        </div>
+        <div>
+          <span class="no">ii.</span>
+          <h4>The documents you chase</h4>
+          <p>Photographs, insurance cards, identification, the police report. A form cannot ask for them well, cannot accept them from a phone, and cannot file them against the right person without someone doing it by hand.</p>
+        </div>
+        <div>
+          <span class="no">iii.</span>
+          <h4>The record that isn't there</h4>
+          <p>When a firm asks where a signed client came from, what they were told and when they agreed, a spreadsheet row is not an answer. That gap is also why it is hard to charge more for the work.</p>
+        </div>
+      </div>
+
+      <p class="pull">A form gives the firm a name in a spreadsheet. This gives the firm a workplace: a signed retainer, the documents attached, and a case that stays in one place until it closes.</p>
+
+      <p class="small">If there is more to your current setup than this — a CRM, a case management system, something in between — tell me before we begin and I will adjust the scope around it. The description above is what I understand today, and I would rather correct it now than build on an assumption.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="layers">
+  <div class="wrap split">
+    <div class="label"><span>02</span>What this is</div>
+    <div>
+      <h2 class="h2">Between an intake form and a practice management <em>system.</em></h2>
+      <p class="lede">There are three things a product like this can be, and the difference between them is not cosmetic — it decides what you can charge for.</p>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th style="width:40%">Capability</th><th style="width:20%" class="num" >Intake platform</th><th style="width:20%" class="num">This product</th><th style="width:20%" class="num">Full case management</th></tr></thead>
+        <tbody>
+          <tr><td>Branded intake, conditional questions</td><td class="num">✓</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Electronic retainer signing</td><td class="num">✓</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Secure document storage</td><td class="num">✓</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Accept or decline a case</td><td class="num">✓</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Individual case records</td><td class="num">✓</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Add a case that came in by phone</td><td class="num">—</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Internal notes, assignment, status</td><td class="num">—</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Close, archive and reopen</td><td class="num">—</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Usage-based billing</td><td class="num">—</td><td class="num">✓</td><td class="num">✓</td></tr>
+          <tr><td>Court calendar, trust accounting, time tracking</td><td class="num">—</td><td class="num">—</td><td class="num">✓</td></tr>
+          <tr><td>Settlement management, document automation</td><td class="num">—</td><td class="num">—</td><td class="num">✓</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>This is the middle column. It is not an attempt to replace Clio or Filevine — a firm that already runs one of those should keep it, and this should sit alongside it as the place a case lives from enquiry through acceptance and its first documents. Competing head-on with a full practice management system would mean building trust accounting, calendaring and time capture, and it would put the product in a price comparison it is not designed to win.</p>
+
+      <div class="aside">
+        <div class="h">Why the middle column is the right one</div>
+        <p>A firm will not pay per case for a system that only collects enquiries — the value ends the moment the form is submitted. It will pay per case for a workspace that holds the matter while the file is being opened, because that is a period where the firm's expensive software is sitting empty and its staff are working out of an inbox. That is the gap this fills, and it is why per-case pricing is defensible rather than invented.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band mid" id="portal">
+  <div class="wrap">
+    <div class="kicker">03 · What the firm sees</div>
+    <h2 class="h2" style="max-width:24ch">A portal that carries the firm's <em>name.</em></h2>
+    <p class="lede">Each firm gets its own private, branded environment. Its own clients, its own documents, its own cases — isolated from every other firm on the platform at the database level, not by convention.</p>
+
+    <div class="portal">
+      <div class="bar">
+        <div class="brand">abrica<i>.</i></div>
+        <div class="pow">Powered by The Marketing Millennial</div>
+      </div>
+      <div class="body">
+        <div class="hello">
+          <div class="hi">Law firm portal</div>
+          <div class="who">Good morning, Morgan &amp; Associates</div>
+        </div>
+        <div class="counters">
+          <div><div class="n">12</div><div class="k">New inquiries</div></div>
+          <div><div class="n">5</div><div class="k">Pending signatures</div></div>
+          <div><div class="n">38</div><div class="k">Active cases</div></div>
+          <div><div class="n">16</div><div class="k">Closed cases</div></div>
+        </div>
+        <div class="pnav">
+          <div class="on"><b>Intake center</b>Review new inquiries and completed questionnaires.</div>
+          <div><b>My cases</b>Create, review, assign and manage cases.</div>
+          <div><b>Retainers</b>Signed and outstanding agreements.</div>
+          <div><b>Documents</b>Upload and retrieve case documents.</div>
+          <div><b>Team</b>Attorneys and staff, with access levels.</div>
+          <div><b>Billing</b>Active case usage and invoices.</div>
+          <div><b>Settings</b>Branding, notifications and preferences.</div>
+          <div><b>Help</b>Support and the platform guide.</div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>Illustrative interface.</b> Four counters, seven sections, and one place per firm where the work actually lives. Every element shown is inside Stage One.</p>
+
+    <h3 class="h3" style="margin-top:52px">Inside a single case</h3>
+    <p>Open a case and everything about it is on one page, in the order a person actually needs it. No searching an inbox for the photograph someone sent on a Tuesday.</p>
+
+    <div class="casetabs">
+      <span class="on">Client</span><span>Intake</span><span>Documents</span><span>Agreements</span><span>Notes</span><span>Team</span><span>Activity</span>
+    </div>
+    <div class="casegrid">
+      <div><h5>Client profile</h5><p>Contact details, date of birth, address and emergency contact — captured at intake, editable by the firm.</p></div>
+      <div><h5>Original intake</h5><p>The completed questionnaire exactly as the client saw it, read-only and versioned, so the record can always be reproduced.</p></div>
+      <div><h5>Case documents</h5><p>Photographs, police report, insurance and identification, filed by category. The firm can add what arrives later by post or email.</p></div>
+      <div><h5>Executed retainer</h5><p>The signed agreement with its certificate of completion, stored against the case and never modified after signature.</p></div>
+      <div><h5>Internal notes</h5><p>Attorney and staff notes on the matter, with authorship and edit history retained.</p></div>
+      <div><h5>Assigned personnel</h5><p>Which attorney, paralegal or case manager owns the file — and who else can see it.</p></div>
+      <div><h5>Activity history</h5><p>Every document received, status change, assignment and signature event, timestamped and immutable.</p></div>
+      <div><h5>Case status</h5><p>Where the matter stands, what is outstanding, and whether it is open, closed or archived.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band dark" id="destination">
+  <div class="wrap">
+    <div class="kicker">04 · The client's side</div>
+    <h2 class="h2" style="max-width:22ch">One session. No chasing.<br><em>From enquiry to instructed.</em></h2>
+    <p class="lede" style="max-width:58ch">This is what the prospective client experiences, in order. Everything below is in Stage One, on a phone, without an app to install.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="no">01</div>
+        <div><h4>The enquiry lands on the firm's page</h4><p>Not a generic form with a logo bolted on. The firm's name, its colours, its language. To the person filling it in, it is the firm's own intake — which is the point, because they are deciding whether to trust that firm.</p></div>
+        <div class="out">A page they can send to</div>
+      </div>
+      <div class="step">
+        <div class="no">02</div>
+        <div><h4>The questions adapt to what happened</h4><p>Someone struck by a truck is asked about the company that owned it. Someone who slipped in a store is asked who manages the property. Someone who has not seen a doctor is not asked which hospital they attended. The intake reads as attention, not as paperwork.</p></div>
+        <div class="out">Conditional logic, built in</div>
+      </div>
+      <div class="step">
+        <div class="no">03</div>
+        <div><h4>The documents are captured while they are still there</h4><p>Injury photographs, insurance cards, identification, the police report — taken with a phone camera during the intake and filed by category. No second conversation about where to send things.</p></div>
+        <div class="out">Files, sorted, attached</div>
+      </div>
+      <div class="step">
+        <div class="no">04</div>
+        <div><h4>The representation question is asked before the retainer</h4><p>If the person says they already have a lawyer, the intake stops and no retainer is sent. It is the kind of error that becomes a real problem later, and it is removed rather than left to memory.</p></div>
+        <div class="out">A safeguard, not a reminder</div>
+      </div>
+      <div class="step">
+        <div class="no">05</div>
+        <div><h4>The retainer is signed on the same screen</h4><p>The firm's own retainer, executed electronically, with the certificate stored against the client. A signed retainer records the client's instruction; acceptance of the matter remains the firm's decision, as it must — but the instruction is on file.</p></div>
+        <div class="out">Executed, with certificate</div>
+      </div>
+      <div class="step">
+        <div class="no">06</div>
+        <div><h4>The case opens itself</h4><p>The intake becomes a case in the firm's portal, with the documents, the retainer and the activity already attached. The firm receives a notification and a file that is ready to work — not a notification and a link.</p></div>
+        <div class="out">Ready to work</div>
+      </div>
+    </div>
+
+    <p class="closer">The client never leaves the page. Nothing is chased the next morning. And the case does not have to be re-created by hand afterwards.</p>
+  </div>
+</section>
+
+<section class="band" id="model">
+  <div class="wrap split">
+    <div class="label"><span>05</span>How it earns</div>
+    <div>
+      <h2 class="h2">A platform fee, and a fee per case the firm <em>works.</em></h2>
+      <p class="lede">You charge law firms two things: a monthly platform fee for the portal, and a monthly amount for each case being worked inside it. Nothing is charged for a case that is closed or archived.</p>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th style="width:38%">Component</th><th style="width:22%">Charged to the firm</th><th>What it covers</th></tr></thead>
+        <tbody>
+          <tr><td>Platform fee</td><td class="num">Monthly, per firm</td><td>The branded intake page, the portal, unlimited staff seats, document storage, support</td></tr>
+          <tr><td>Active case fee</td><td class="num">Monthly, per case</td><td>The case workspace — record, documents, notes, assignment, status, activity</td></tr>
+          <tr><td>Closed or archived</td><td class="num">Nothing</td><td>A closed case stays readable and retrievable, but stops being billable</td></tr>
+          <tr><td>Firm onboarding</td><td class="num">One-time</td><td>Branding, retainer template, question set, testing, training</td></tr>
+        </tbody>
+      </table></div>
+
+      <p>Two design decisions make this fair to the firm and clean commercially.</p>
+
+      <p><strong>The firm can add cases that never touched the intake page.</strong> A client who walked into the office or telephoned is keyed in directly, and is billed at the same rate. That matters practically — most of a firm's cases arrive that way — and it means the fee is for the workspace the firm uses, not for the enquiry it received. Firms should be told this plainly, because it is the reason the model is defensible rather than extractive.</p>
+
+      <p><strong>The firm sees its running count at all times.</strong> The billing section shows the number of billable cases, the projected invoice, and the history. Nobody should learn about a charge at the end of the month, and a case the firm believes was miscounted can be flagged for review from the same screen.</p>
+
+      <div class="aside">
+        <div class="h">What this means for what you can charge</div>
+        <p>Per-case pricing means revenue grows with the firm's own case load rather than with the number of firms you sign — so a single busy practice can be worth more than three quiet ones. It also means the product has to earn its place every month. That is a harder commercial position than a flat subscription, and it is the right one: a firm that stops seeing value stops paying, which is a sharper feedback signal than a twelve-month contract.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band dark" id="revenue">
+  <div class="wrap">
+    <div class="kicker">06 · The arithmetic</div>
+    <h2 class="h2" style="max-width:22ch">What that produces at your own <em>pricing.</em></h2>
+    <p class="lede" style="max-width:58ch">Move the four controls. The figures are an illustration of revenue at the volumes you set — not a forecast, and not a rate card you are committed to.</p>
+
+    <div class="calc">
+      <div class="head">
+        <span class="t">Per-case revenue model</span>
+        <span class="s">Illustrative · not a forecast</span>
+      </div>
+      <div class="body">
+        <div class="controls">
+          <div class="cgrid">
+            <div class="cg">
+              <label for="firms">Law firms on the platform <output id="oFirms">10</output></label>
+              <input type="range" id="firms" min="1" max="40" value="10" step="1" aria-label="Number of law firms">
+              <div class="hint">Each firm configured once, then billed monthly.</div>
+            </div>
+            <div class="cg">
+              <label for="cases">Active cases per firm <output id="oCases">30</output></label>
+              <input type="range" id="cases" min="2" max="120" value="30" step="1" aria-label="Active cases per firm">
+              <div class="hint">The single figure that drives everything below it.</div>
+            </div>
+            <div class="cg">
+              <label for="rate">Monthly charge per case <output id="oRate">$12</output></label>
+              <input type="range" id="rate" min="4" max="40" value="12" step="1" aria-label="Monthly charge per active case">
+            </div>
+            <div class="cg">
+              <label for="plat">Platform fee per firm <output id="oPlat">$199</output></label>
+              <input type="range" id="plat" min="0" max="600" value="199" step="1" aria-label="Monthly platform fee per firm">
+            </div>
+          </div>
+        </div>
+        <div class="outs">
+          <div class="out" style="margin-bottom:26px">
+            <div class="lab">Annual revenue</div>
+            <div class="big"><span id="rArr">$67,080</span><small>per year</small></div>
+          </div>
+          <div class="outrow"><span class="k">Monthly revenue</span><span class="v" id="rMrr">$5,590</span></div>
+          <div class="outrow"><span class="k">Average monthly invoice per firm</span><span class="v" id="rPer">$559</span></div>
+          <div class="outrow"><span class="k">Cases managed on the platform</span><span class="v" id="rCases">300</span></div>
+          <div class="outrow"><span class="k">Estimated running cost</span><span class="v" id="rOpex">$310</span></div>
+          <div class="outrow"><span class="k">Monthly margin before tax</span><span class="v" id="rNet">$5,280</span></div>
+        </div>
+      </div>
+      <div class="foot">Revenue illustration only. Running cost models hosting, database, storage, authentication, email, monitoring, backups and card processing. It excludes tax, sales expense, customer acquisition and your own time. No revenue is guaranteed, and the volume of active cases per firm should be confirmed against real practices before it is relied upon.</div>
+    </div>
+
+    <p class="closer" style="margin-top:44px">Ten firms at thirty open cases each is a product business. Ten firms at three cases each is a hobby with a database.</p>
+  </div>
+</section>
+
+<section class="band mid" id="stages">
+  <div class="wrap">
+    <div class="kicker">07 · How it grows</div>
+    <h2 class="h2" style="max-width:24ch">One product, delivered in stages.<br><em>Each one sells on its own.</em></h2>
+    <p class="lede">Stage One is complete and billable the week it finishes. The later stages exist because there are adjacent markets and capabilities worth adding once the first is earning — not because Stage One is unfinished.</p>
+
+    <div class="tablewrap"><table style="margin-top:36px">
+      <thead><tr><th style="width:9%">Stage</th><th style="width:24%">Name</th><th style="width:42%">What it adds</th><th style="width:25%">Bought</th></tr></thead>
+      <tbody>
+        <tr><td><strong>One</strong></td><td>Launch &amp; Monetize</td><td>Intake, retainer signing, case workspace, per-case billing, firm portal, administration</td><td>This proposal</td></tr>
+        <tr><td><strong>Two</strong></td><td>Expand &amp; Scale</td><td>Workers' compensation intake, Spanish-language intake, self-service firm onboarding</td><td>Separately, later</td></tr>
+        <tr><td><strong>Three</strong></td><td>Automate &amp; Measure</td><td>Pipeline visibility, automated follow-up on incomplete intakes, consultation booking, source attribution to signed retainer</td><td>Separately, later</td></tr>
+        <tr><td><strong>Four</strong></td><td>Differentiate &amp; Compete</td><td>Telephone intake with transcription, document intelligence, multi-office dashboards</td><td>Separately, later</td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="gain">
+      <div class="h">The sentence you can say from day one</div>
+      <p class="quote">"I run a branded intake and case workspace for personal injury firms. The client completes intake, uploads their documents and signs the retainer in one session — the firm gets a signed retainer and an open case, not an enquiry."</p>
+      <p style="margin-top:14px">That is a sentence you cannot say today. It changes the conversation from selling a service to demonstrating a product, and you can show it working on your phone during the meeting.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="scope">
+  <div class="wrap split">
+    <div class="label"><span>08</span>Scope</div>
+    <div>
+      <h2 class="h2">What is in Stage One — and what is <em>deliberately</em> not.</h2>
+      <p class="lede">The exclusions matter as much as the inclusions. They are what keep this a fast, focused build rather than a practice management system that takes a year and competes with software the firm already owns.</p>
+
+      <div class="casegrid" style="border:1px solid var(--rule);margin-top:30px">
+        <div><h5>Included</h5><p>Branded intake page per firm · conditional questionnaires · personal injury intake · save and resume · representation screening · document capture by phone · secure storage · electronic retainer with certificate · email notifications · firm login with MFA · case register and workspace · manual case creation · notes · assignment · status, closure, archive, reactivation · activity history · per-case usage tracking and billing · team management · firm administration</p></div>
+        <div><h5>Not included</h5><p>Trust accounting · court calendar integration · legal time tracking · settlement management · advanced document automation · third-party case management integrations. These are what separate a case workspace from a full practice management system, and each is available in the software the firm already uses.</p></div>
+      </div>
+
+      <p style="margin-top:24px">If any of the excluded items turns out to be essential to your first firm, tell me before week two. Adding one later is a change order rather than a surprise, and it is better priced before the architecture settles than after.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band mid" id="weeks">
+  <div class="wrap">
+    <div class="kicker">09 · Stage One schedule</div>
+    <h2 class="h2" style="max-width:26ch">Four checkpoints, and what is working at <em>each one.</em></h2>
+    <p class="lede">Fourteen weeks, released against working software rather than against calendar dates. Each checkpoint is something you can log into and use.</p>
+
+    <div class="tablewrap"><table style="margin-top:34px">
+      <thead><tr><th style="width:12%">Weeks</th><th style="width:30%">Built</th><th style="width:40%">What you can use on the Friday</th><th style="width:18%">Released</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1–4</strong></td><td>Architecture, security foundation, database, branded intake</td><td>The intake running on your phone, branded for the first firm, with conditional questions and the representation gate. Documents uploading and filing by category.</td><td class="num">$8,000</td></tr>
+        <tr><td><strong>5–9</strong></td><td>Signature, firm portal, case workspace, case register</td><td>The retainer signed on screen and stored with its certificate. A firm logs in, sees the four counters, opens a case and finds the intake, documents and signed retainer already there.</td><td class="num">$6,000</td></tr>
+        <tr><td><strong>10–12</strong></td><td>Notes, assignment, status lifecycle, activity history, team</td><td>A case can be worked: notes added, personnel assigned, status moved, closed, archived and reopened — with every event on its timeline.</td><td class="num">$5,000</td></tr>
+        <tr><td><strong>13–14</strong></td><td>Per-case metering, billing, security testing, deployment, training</td><td>Usage counted monthly, invoices issued, running totals visible to the firm. Platform in production, documentation and training delivered.</td><td class="num">$5,000</td></tr>
+        <tr class="total"><td><strong>Total</strong></td><td>Fourteen weeks</td><td>Stage One complete and billing</td><td class="num">$24,000</td></tr>
+      </tbody>
+    </table></div>
+
+    <p>Security testing, quality assurance and documentation run throughout rather than being compressed into the final fortnight; the last two weeks are final validation, not first discovery. Acceptance is measured against a written list of criteria agreed before work begins.</p>
+
+    <p>The schedule assumes the first firm's retainer document and its branding arrive in week one, and that one person can approve the intake questions by the end of week two. The retainer document is the item that most often moves a launch date, because no real client can sign without it.</p>
+  </div>
+</section>
+
+<section class="band" id="investment">
+  <div class="wrap split">
+    <div class="label"><span>10</span>Investment</div>
+    <div>
+      <h2 class="h2">Stage One is a <em>$24,000</em> decision.</h2>
+      <p class="lede">Fourteen weeks of development covering the intake, the retainer, the case workspace, the portal and the billing that makes it a business. Paid against four working checkpoints rather than against dates.</p>
+
+      <div class="figrow">
+        <div>
+          <div class="l">Stage One, complete</div>
+          <div class="v">$24,000</div>
+          <div class="s">Fourteen weeks · released at four checkpoints</div>
+        </div>
+        <div>
+          <div class="l">Committed on signature</div>
+          <div class="v">$8,000</div>
+          <div class="s">Commencement, on the executed agreement</div>
+        </div>
+      </div>
+
+      <p>Each payment is released when the work before it is running. If the intake is not working on your phone at the end of week four, the second payment is not invoiced. The final payment depends on the platform being in production and handover being complete.</p>
+
+      <h3 class="h3">Firms beyond the first two</h3>
+      <p>Stage One includes the configuration of two firms. Each additional firm is a one-time <strong>$1,250</strong>, covering branding, the retainer template, the question set, email routing, an end-to-end test on a real device, a training call and thirty days of firm-specific support. Roughly a day of technical work plus the support that follows a launch.</p>
+
+      <h3 class="h3">Running costs</h3>
+      <p>Hosting, database, storage, email, monitoring and backups run at roughly <strong>$90 to $140 per month at Stage One volume</strong>, billed to you at cost and not part of my fee. That figure assumes each firm connects its own e-signature account during onboarding, which is the recommended arrangement — the retainers then sit in the firm's own account, under its own retention settings, and the per-envelope cost stays with the firm rather than you. Cost rises with firm count and case volume; it is not fixed.</p>
+      <p>Card processing on firm invoices is separate and runs at the usual rate, roughly 3% of collected revenue.</p>
+
+      <h3 class="h3">Support after handover</h3>
+      <p>Each stage carries a thirty-day warranty. After that, support is optional and separate from the development fee.</p>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th style="width:24%">Plan</th><th style="width:18%">Monthly</th><th style="width:20%">Included</th><th>Response</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Essential</strong></td><td class="num">$750</td><td>3 hours</td><td>Two business days</td></tr>
+          <tr><td><strong>Growth</strong></td><td class="num">$1,500</td><td>8 hours</td><td>One business day</td></tr>
+          <tr><td><strong>Enterprise</strong></td><td class="num">$3,000</td><td>12 hours</td><td>Four business hours</td></tr>
+        </tbody>
+      </table></div>
+
+      <p class="small">Response times describe the initial response, not resolution. Monitoring, patching and backup verification do not consume included hours; client-requested work does. Beyond the included hours, work is billed at $175 per hour and approved in writing first. You are under no obligation to take a plan, and the platform continues to run without one — but without it there is no monitoring, no security updating and no support beyond the warranty.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band mid" id="own">
+  <div class="wrap split">
+    <div class="label"><span>11</span>What you own</div>
+    <div>
+      <h2 class="h2">Yours to operate, and yours to <em>sell.</em></h2>
+      <p>You own the client-specific components built for you, and you hold a perpetual, non-exclusive, worldwide licence to operate, brand, market and sell subscription access to the platform — including selling the business itself.</p>
+      <p>Every account the platform runs on is opened in your name: hosting, database, storage, domain, email, monitoring, e-signature. I hold administrative access while we work together and it is removed when the engagement ends. That is what makes the licence worth something — a perpetual right means little if the supplier holds the keys.</p>
+      <p>You also receive the source code, the infrastructure configuration, an architecture document and a runbook, so another qualified developer can pick the platform up and maintain it. Continuity is not a favour; it is what makes this an asset rather than a dependency.</p>
+
+      <div class="aside">
+        <div class="h">Said plainly</div>
+        <p>The development cost does not create value on its own — revenue does. The build is what makes revenue possible; signing firms is the work that makes it worth anything. What you end up with is a product that has the potential to develop transferable enterprise value, not a guarantee of one.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="need">
+  <div class="wrap split need">
+    <div class="label"><span>12</span>What I need</div>
+    <div>
+      <h2 class="h2">Five things, and then it <em>starts.</em></h2>
+      <p class="lede">None of these take long. The first one is the only one that can move the launch date, because no real client can sign without it.</p>
+      <ol style="margin-top:32px">
+        <li><b>The first firm's retainer agreement, as a PDF, in week one</b> — with a note from their attorney confirming it may be signed electronically. Everything else can be built without it.</li>
+        <li><b>That firm's logo and two colour codes.</b> A brand guide is ideal; a screenshot and a hex code is enough.</li>
+        <li><b>An email address</b> where the firm wants new client notifications to arrive.</li>
+        <li><b>Approval of the intake questions</b> by the end of week two. I will draft them from the firm's existing form; one person needs to sign them off.</li>
+        <li><b>One decision-maker.</b> Projects with three approvers are the ones that run long.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="band mid" id="proceed">
+  <div class="wrap split signblock">
+    <div class="label"><span>13</span>To proceed</div>
+    <div>
+      <h2 class="h2">Sign below and return the first firm's <em>retainer.</em></h2>
+      <p>Work begins the following Monday, once the development agreement is executed and the $8,000 commencement payment has been received. The agreement sets out ownership, licensing, acceptance criteria, warranty and termination; the commercial terms are the ones in this document.</p>
+
+      <div class="act" id="bc-actions">
+        <div class="row">
+          <button class="btn" id="bc-accept" type="button">Accept this proposal</button>
+          <a class="btn pay" id="bc-pay" href="__BC_PAY_URL__" target="_blank" rel="noopener noreferrer" hidden>Pay the $8,000 commencement</a>
+        </div>
+        <p class="note">Accepting records your agreement to <strong>Stage One at $24,000</strong>, released against the four checkpoints, with the <strong>$8,000 commencement</strong> due on the executed agreement &mdash; together with your name, a timestamp, and the exact version of this document. The development agreement itself is executed separately. If you would rather talk it through first, the assistant at the bottom of the page can answer questions about scope, the checkpoints or the investment.</p>
+      </div>
+
+      <div class="signrow">
+        <div><div class="line"></div><div class="scap">Signature — Hector Abrica</div></div>
+        <div><div class="line"></div><div class="scap">Date</div></div>
+      </div>
+      <div class="signrow">
+        <div><div class="line"></div><div class="scap">For and on behalf of The Marketing Millennial Limited</div></div>
+        <div><div class="line"></div><div class="scap">Date</div></div>
+      </div>
+
+      <div class="fine">
+        This proposal covers Stage One only, at $24,000, delivered over fourteen weeks. Stages Two to Four are described for planning and would each be confirmed separately. Figures are in United States dollars. The revenue illustration is illustrative: it is not a forecast, no subscription revenue is guaranteed, and the number of active cases per firm should be confirmed against real practices before it is relied upon. Nothing in this document constitutes legal advice on the fee structure, and the treatment of any fee arrangement under applicable rules of professional conduct is a matter for each firm and its counsel.
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <footer>
+      <span>The Marketing Millennial Limited</span>
+      <span>Proposal · 24 November 2026 · Valid 14 days</span>
+    </footer>
+  </div>
+</section>
+
+<script src="/proposal.js" defer></script>
+
+
+<script src="__BC_AGENT_ORIGIN__/widget.js"
+        data-bc="__BC_TOKEN__"
+        data-chat-origin="__BC_AGENT_ORIGIN__"
+        data-label="Questions about this proposal?"
+        data-accent="#8A6B3C"
+        defer></script>
+</body>
+</html>

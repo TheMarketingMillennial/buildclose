@@ -1,0 +1,29 @@
+# BuildClose — client-facing proposal hosting (agency-proposals.com)
+#
+# This site hosts the proposal DOCUMENT a prospect reads. It is a different origin
+# from both the dashboard (app.buildclose.app) and the assistant
+# (agent.buildclose.app), which is what stops the assistant from being able to
+# reach staff data and stops the proposal page from holding any staff session.
+#
+# NETLIFY SETUP: set this site's Base directory to `apps/proposals`. `publish`
+# and `command` are then resolved relative to that folder.
+#
+# DNS IS NOT TOUCHED BY THIS FILE. agency-proposals.com keeps its current DNS and
+# hosting until the user explicitly authorises the switch.
+
+[build]
+  publish = "dist"
+  command = "node build.mjs"
+
+# The proposal carries one prospect's commercial terms, so the root is not a
+# public index. For the Abrica demo the root resolves to the only document on the
+# site; a multi-tenant deployment would list nothing here.
+[[redirects]]
+  from = "/"
+  to = "/proposals/abrica.html"
+  status = 302
+
+[[redirects]]
+  from = "/abrica"
+  to = "/proposals/abrica.html"
+  status = 200

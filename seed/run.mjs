@@ -105,7 +105,7 @@ async function main() {
     {
       // Identity is neutral and seller-branded. The prospect is Abrica's guest:
       // nothing here says "BuildClose", and vendor branding stays off.
-      displayName: 'Abrica Assistant',
+      displayName: 'Proposal Assistant',
       subtitle: 'Ask anything about this proposal',
       accentColor: '#1b3a6b',
       showVendorBranding: false,
@@ -128,6 +128,22 @@ async function main() {
         'Firm login supports multi-factor authentication.',
         'Every document, status change, assignment and signature event is timestamped on the case timeline.',
         'Stage One is positioned between an intake form and a full practice management system. It is not a replacement for Clio or Filevine.',
+
+        // Ownership — section 11 of the proposal. Asked about often, and the answer
+        // is a commercial promise, so it is stated verbatim from the document.
+        'You own the client-specific components built for you.',
+        'You hold a perpetual, non-exclusive, worldwide licence to operate, brand, market and sell subscription access to the platform, including selling the business itself.',
+        'Every account the platform runs on is opened in your name: hosting, database, storage, domain, email, monitoring and e-signature.',
+        'Administrative access is held by the developer while the engagement runs and is removed when it ends.',
+        'You receive the source code, the infrastructure configuration, an architecture document and a runbook, so another qualified developer can pick the platform up and maintain it.',
+
+        // Stages Two to Four — described in the proposal for planning only. The
+        // assistant may explain them but must never sell them or imply they are
+        // included in this proposal.
+        'Stage Two is Expand & Scale: workers\u2019 compensation intake, Spanish-language intake, and self-service firm onboarding.',
+        'Stage Three is Automate & Measure: pipeline visibility, automated follow-up on incomplete intakes, consultation booking, and source attribution to a signed retainer.',
+        'Stage Four is Differentiate & Compete: telephone intake with transcription, document intelligence, and multi-office dashboards.',
+        'Stages Two to Four are not part of this proposal. Each is described for planning and would be confirmed and bought separately, later.',
       ],
       valuePoints: [
         'The value is the hour after someone submits an enquiry: the retainer can be signed and the case opened while they are still willing to act.',

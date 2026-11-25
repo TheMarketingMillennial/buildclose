@@ -1,8 +1,17 @@
 /**
  * Shared API client for the chat app.
  *
+ * PLAIN JAVASCRIPT — deliberately. This file is served to the browser as-is;
+ * there is no bundler or transpiler in front of it. Keeping types here as JSDoc
+ * rather than TypeScript syntax means the file cannot fail to parse at runtime.
+ *
+ * (History: these files were TypeScript while a Vite build existed. When the
+ * build was removed the types stayed, and since the frame is sandboxed any parse
+ * error just left the widget on its loading state with no visible cause. build.mjs
+ * now syntax-checks every served script, so this cannot regress silently.)
+ *
  * The session token lives in memory only — never localStorage, never a cookie.
- * That choice means:
+ * That means:
  *   - an XSS payload cannot read it from storage;
  *   - it cannot leak cross-origin (no cookie is sent automatically);
  *   - a reload requires re-bootstrapping, which is cheap because the widget
@@ -13,88 +22,98 @@
  * the cost of a leak is far higher than the cost of a re-handshake.
  */
 
-export interface Cta {
-  id: string;
-  label: string;
-  url: string;
-}
+/**
+ * @typedef {object} Cta
+ * @property {string} id
+ * @property {string} label
+ * @property {string} url
+ */
 
-export interface Terms {
-  proposal: {
-    title: string;
-    prospectName: string;
-    prospectCompany: string;
-    summary: string;
-    totalValueMinor: number;
-    commencementMinor: number;
-    currency: string;
-    termsNote: string;
-    validUntil: string;
-    hostedProposalUrl: string;
-  };
-  documentVersion: number;
-  documentHash: string;
-  acceptanceStatus: string;
-  ctas: Cta[];
-  /** Prospect-facing identity. Server-controlled; neutral by default. */
-  identity?: {
-    displayName?: string;
-    subtitle?: string;
-    accentColor?: string;
-    showVendorBranding?: boolean;
-    welcomeMessage?: string;
-  };
-  disclosure: { conversationLogged: boolean; retentionDays: number; assistantIsAI: boolean };
-}
+/**
+ * @typedef {object} Terms
+ * @property {{title: string, prospectName: string, prospectCompany: string,
+ *   summary: string, totalValueMinor: number, commencementMinor: number,
+ *   currency: string, termsNote: string, validUntil: string,
+ *   hostedProposalUrl: string}} proposal
+ * @property {number} documentVersion
+ * @property {string} documentHash
+ * @property {string} acceptanceStatus
+ * @property {Cta[]} ctas
+ * @property {{displayName?: string, subtitle?: string, accentColor?: string,
+ *   showVendorBranding?: boolean, welcomeMessage?: string}} [identity]
+ * @property {{conversationLogged: boolean, retentionDays: number, assistantIsAI: boolean}} disclosure
+ */
 
-export interface ChatResponse {
-  reply: string;
-  cta: Cta | null;
-  escalate: boolean;
-  conversationId: string;
-}
+/**
+ * @typedef {object} ChatResponse
+ * @property {string} reply
+ * @property {Cta | null} cta
+ * @property {boolean} escalate
+ * @property {string} conversationId
+ */
 
+/** A deniable, retryable failure with a message safe to render. */
 export class ApiError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly status: number,
-  ) {
+  /**
+   * @param {string} code
+   * @param {string} message
+   * @param {number} status
+   */
+  constructor(code, message, status) {
     super(message);
     this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
   }
 }
 
 export class ApiClient {
-  private session: string | null = null;
-  private sessionExpiresAt = 0;
+  /** @param {string} baseUrl */
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl;
+    /** @type {string | null} */
+    this.session = null;
+    this.sessionExpiresAt = 0;
+  }
 
-  constructor(private readonly baseUrl: string) {}
-
-  get isAuthenticated(): boolean {
+  get isAuthenticated() {
     return Boolean(this.session) && this.sessionExpiresAt > Date.now() + 30_000;
   }
 
-  /** Exchange a proposal token for a session. Called on every widget handshake. */
-  async bootstrap(token: string, embedOrigin: string): Promise<{ title: string; prospectName: string }> {
+  /**
+   * Exchange a proposal token for a session. Called on every widget handshake.
+   * @param {string} token
+   * @param {string} embedOrigin
+   */
+  async bootstrap(token, embedOrigin) {
     const res = await this.post('/api/bootstrap', { token, embedOrigin }, null);
-    const data = (await res.json()) as { session: string; expiresAt: number; proposal: { title: string; prospectName: string } };
+    /** @type {{session: string, expiresAt: number, proposal: {title: string, prospectName: string}}} */
+    const data = await res.json();
     this.session = data.session;
     this.sessionExpiresAt = data.expiresAt;
     return data.proposal;
   }
 
-  async terms(): Promise<Terms> {
+  /** @returns {Promise<Terms>} */
+  async terms() {
     const res = await this.post('/api/terms', {}, this.requireSession());
-    return (await res.json()) as Terms;
+    return res.json();
   }
 
-  async chat(message: string): Promise<ChatResponse> {
+  /**
+   * @param {string} message
+   * @returns {Promise<ChatResponse>}
+   */
+  async chat(message) {
     const res = await this.post('/api/chat', { message }, this.requireSession());
-    return (await res.json()) as ChatResponse;
+    return res.json();
   }
 
-  async event(type: string, ctaId?: string): Promise<void> {
+  /**
+   * @param {string} type
+   * @param {string} [ctaId]
+   */
+  async event(type, ctaId) {
     if (!this.isAuthenticated) return; // analytics must never block the UI
     try {
       await this.post('/api/event', { type, ...(ctaId ? { ctaId } : {}) }, this.requireSession());
@@ -103,23 +122,22 @@ export class ApiClient {
     }
   }
 
-  async accept(payload: {
-    fullName: string;
-    email: string;
-    title?: string;
-    documentHash: string;
-    documentVersion: number;
-    typedSignature: string;
-  }): Promise<{ acceptedAt: number; documentVersion: number }> {
+  /**
+   * @param {{fullName: string, email: string, title?: string, documentHash: string,
+   *   documentVersion: number, typedSignature: string}} payload
+   * @returns {Promise<{acceptedAt: number, documentVersion: number}>}
+   */
+  async accept(payload) {
     const res = await this.post(
       '/api/accept',
       { ...payload, consent: true, accept: true },
       this.requireSession(),
     );
-    return (await res.json()) as { acceptedAt: number; documentVersion: number };
+    return res.json();
   }
 
-  async decline(reason?: string): Promise<void> {
+  /** @param {string} [reason] */
+  async decline(reason) {
     try {
       await this.post('/api/decline', { reason }, this.requireSession());
     } catch {
@@ -127,17 +145,24 @@ export class ApiClient {
     }
   }
 
-  clear(): void {
+  clear() {
     this.session = null;
     this.sessionExpiresAt = 0;
   }
 
-  private requireSession(): string {
+  /** @returns {string} */
+  requireSession() {
     if (!this.session) throw new ApiError('unauthorized', 'Session expired. Please reopen the assistant.', 401);
     return this.session;
   }
 
-  private async post(path: string, body: unknown, bearer: string | null): Promise<Response> {
+  /**
+   * @param {string} path
+   * @param {unknown} body
+   * @param {string | null} bearer
+   * @returns {Promise<Response>}
+   */
+  async post(path, body, bearer) {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
       headers: {
@@ -153,7 +178,8 @@ export class ApiClient {
       let code = 'request_failed';
       let message = 'Something went wrong.';
       try {
-        const data = (await res.json()) as { error?: { code?: string; message?: string } };
+        /** @type {{error?: {code?: string, message?: string}}} */
+        const data = await res.json();
         code = data.error?.code ?? code;
         message = data.error?.message ?? message;
       } catch {
@@ -167,5 +193,6 @@ export class ApiClient {
   }
 }
 
-export const money = (minor: number): string =>
+/** @param {number} minor */
+export const money = (minor) =>
   (minor / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });

@@ -17,9 +17,12 @@
 # Deploy:  netlify deploy --prod --dir apps/agent   (site: buildclose-agent)
 
 [build]
-  publish = "."
-  # Injects the Cloud Functions base URL into config.js. Without it the chat app
-  # would resolve API_BASE to '' and call this static host instead of the backend.
+  publish = "dist"
+  # Emits dist/ containing the loader, the framed app, config.js (API base) and
+  # _headers (CSP + CORS). Both the API base and the policy are derived from the
+  # same environment variables, so they cannot drift apart — the previous
+  # hand-written _headers named the production host and silently broke every
+  # non-production run with a connect-src CSP violation.
   command = "node build.mjs"
 
 # The framed app lives at /embed; the bare root is not a product surface.

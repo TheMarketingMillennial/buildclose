@@ -50,3 +50,4 @@ coverage/
 tests/.tmp/
 *.tar.gz
 seed/.seeded.json
+seed/.local-token.json

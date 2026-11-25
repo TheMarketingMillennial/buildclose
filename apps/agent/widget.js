@@ -35,6 +35,10 @@
   var LABEL = script.getAttribute('data-label') || 'Questions about this proposal?';
   var ACCENT = script.getAttribute('data-accent') || '#1B3A6B';
   var POSITION = script.getAttribute('data-position') === 'left' ? 'left' : 'right';
+  // Eager by default: mounting the frame on load is what registers a proposal
+  // view for a prospect who reads the page but never opens the chat. Set
+  // data-lazy="true" to defer the iframe until the launcher is clicked.
+  var LAZY = script.getAttribute('data-lazy') === 'true';
 
   // Guard against double-injection when a CMS repeats the snippet.
   if (window.__buildCloseWidgetLoaded) return;
@@ -43,6 +47,7 @@
   var open = false;
   var ready = false;
   var frame = null;
+  var pendingAccept = false;
 
   // ---------------------------------------------------------------- styles
   var css = [
@@ -103,8 +108,28 @@
     frame = document.createElement('iframe');
     frame.className = 'bcw-frame';
     frame.title = 'Proposal assistant';
-    // No allow-same-origin: the chat app must not share an origin with this page.
-    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox');
+    /**
+     * Sandbox: allow-same-origin IS required, and omitting it was a real bug.
+     *
+     * Without it the frame gets an OPAQUE origin, so `self.origin` is "null".
+     * Two things then break, both fatal:
+     *   1. the frame's own module script (/embed/app.js) is fetched as a
+     *      cross-origin request from "null" and blocked by the host's CORS policy;
+     *   2. every API call would carry `Origin: null`, which the backend allowlist
+     *      correctly rejects.
+     * The result was a widget that mounted and then sat on "Connecting…" forever.
+     *
+     * allow-same-origin is only dangerous when the framed document is
+     * SAME-ORIGIN with the embedder — then the frame could reach into the parent
+     * and strip its own sandbox. This frame is always CROSS-ORIGIN (the chat app
+     * lives on its own hostnames by design, requirement 3), so allow-same-origin
+     * gives it its own origin and nothing more: it cannot touch this page's DOM,
+     * cannot read this page's storage, and cannot read cookies for this site.
+     *
+     * Do NOT "fix" this by making the backend accept Origin: null — that would
+     * let any sandboxed frame anywhere in the world call the API.
+     */
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox');
     frame.setAttribute('allow', 'clipboard-write');
     frame.src = CHAT_ORIGIN + '/embed';
     panel.appendChild(frame);
@@ -123,6 +148,11 @@
     if (data.type === 'bc:ready') {
       ready = true;
       send({ type: 'bc:init', token: token, embedOrigin: window.location.origin });
+      if (pendingAccept) {
+        // The host page asked for acceptance before the frame finished loading.
+        pendingAccept = false;
+        send({ type: 'bc:accept' });
+      }
     } else if (data.type === 'bc:resize' && typeof data.height === 'number') {
       // Height is clamped so a compromised frame cannot cover the page.
       var h = Math.max(320, Math.min(Number(data.height) || 0, Math.round(window.innerHeight * 0.85)));
@@ -140,6 +170,10 @@
   }
 
   window.addEventListener('message', onMessage);
+
+  // Mount now unless the host opted into lazy loading. Without this the page
+  // records nothing for a prospect who reads without opening the assistant.
+  if (!LAZY) mountFrame();
 
   // ------------------------------------------------------------- open/close
   function setOpen(next) {
@@ -188,6 +222,19 @@
     },
     close: function () {
       setOpen(false);
+    },
+    /**
+     * Open the assistant directly on the native acceptance screen. Lets a
+     * proposal page offer "Accept this proposal" as a first-class action while
+     * keeping ONE acceptance implementation inside the frame, where the session
+     * token already lives. Reusing it means the acceptance record, the document
+     * hash check and the stale-terms handling are the same code path the chat
+     * CTA exercises.
+     */
+    openAcceptance: function () {
+      setOpen(true);
+      if (ready) send({ type: 'bc:accept' });
+      else pendingAccept = true;
     },
   };
 })();

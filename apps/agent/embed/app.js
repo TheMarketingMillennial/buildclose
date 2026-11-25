@@ -13,7 +13,7 @@
  * appears in Referer headers, history, or access logs. The parent origin is
  * captured at init and used to scope every outbound message.
  */
-import { ApiClient, ApiError, money, type Terms, type Cta } from '../src/api.js';
+import { ApiClient, ApiError, money } from '../src/api.js';
 
 const API_BASE = window.__BC_API_BASE__ || document.documentElement.dataset.apiBase || '';
 
@@ -50,12 +50,37 @@ let parentOrigin = '';
 let terms = /** @type {Terms | null} */ (null);
 let busy = false;
 let started = false;
+/** Set when the host asks for acceptance before /api/terms has resolved. */
+let wantAccept = false;
 
 // ---------------------------------------------------------------- messaging
 
 function postToParent(payload) {
   if (!parentOrigin) return;
   window.parent.postMessage(payload, parentOrigin);
+}
+
+/**
+ * Announce readiness.
+ *
+ * This is the ONE message that cannot be sent to a known origin, because the
+ * whole point of it is "tell me who you are". `parentOrigin` is still empty at
+ * this moment. Sending it through postToParent() was a real bug: the guard
+ * dropped the message, the widget never replied with bc:init, and the iframe sat
+ * on its loading state forever. Invisible to the API tests, which call the
+ * endpoints directly and never run the handshake.
+ *
+ * Posting to '*' is safe here and only here: the payload is a constant string
+ * with no token, no id and no prospect data. The parent verifies event.origin
+ * against its own configured chat origin before replying, and every subsequent
+ * message goes to that pinned origin.
+ */
+function announceReady() {
+  try {
+    window.parent.postMessage({ type: 'bc:ready' }, '*');
+  } catch {
+    /* parent gone — nothing to announce to */
+  }
 }
 
 function reportHeight() {
@@ -367,6 +392,16 @@ async function begin(token, embedOrigin) {
       addMessage('assistant', greeting);
     }
     el.input.focus();
+
+    // A prospect can press "Accept this proposal" on the host page before this
+    // frame has finished bootstrapping. That request arrives as bc:accept while
+    // `terms` is still null, so it is parked in wantAccept and must be honoured
+    // HERE. Previously it was set and never read: the prospect clicked Accept
+    // and landed on the chat screen instead of the acceptance form.
+    if (wantAccept) {
+      wantAccept = false;
+      openAcceptance();
+    }
   } catch (err) {
     if (err instanceof ApiError) {
       fail(err.message);
@@ -385,6 +420,12 @@ window.addEventListener('message', (event) => {
   if (data.type === 'bc:init' && typeof data.token === 'string') {
     parentOrigin = event.origin;
     void begin(data.token, data.embedOrigin || event.origin);
+  } else if (data.type === 'bc:accept') {
+    // Host page asked for acceptance. If terms are not loaded yet, remember the
+    // request and honour it once begin() resolves; dropping it would leave the
+    // prospect staring at a chat window after clicking "Accept".
+    if (terms) openAcceptance();
+    else wantAccept = true;
   } else if (data.type === 'bc:open') {
     if (terms) show(el.chat);
     setTimeout(() => {
@@ -396,7 +437,8 @@ window.addEventListener('message', (event) => {
   }
 });
 
-// Announce readiness so the widget sends the token.
-postToParent({ type: 'bc:ready' });
+// Announce readiness so the widget sends the token. Must go out on '*': the
+// parent's origin is what this message is asking for.
+announceReady();
 reportHeight();
 window.addEventListener('resize', reportHeight);
