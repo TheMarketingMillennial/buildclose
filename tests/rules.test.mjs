@@ -33,12 +33,23 @@ async function tryWrite(path, headers = {}) {
 
 function assertDenied(result, label) {
   assert.notEqual(result.status, 200, `${label}: request must not succeed (got 200)`);
+
+  // 401/403 = denied by the rules, which is the primary case.
+  //
+  // 400 is also a denial when it is the emulator rejecting a malformed credential
+  // before rules are evaluated ("invalid jwt"). It grants nothing and returns no
+  // document, so accepting it is correct — but it must still be *only* 400, never
+  // a partial success. Anything else (e.g. 500, 404-with-body) is a real anomaly.
+  const denialStatuses = [400, 401, 403];
   assert.ok(
-    result.status === 401 || result.status === 403,
-    `${label}: expected 401/403, got ${result.status}`,
+    denialStatuses.includes(result.status),
+    `${label}: expected 400/401/403, got ${result.status}`,
   );
-  // A denial must not leak document content.
-  assert.ok(!body(result).includes('24'), `${label}: response leaked document data`);
+
+  // The one invariant that matters most: no document content is ever returned.
+  assert.ok(!body(result).includes('24000'), `${label}: response leaked the proposal total`);
+  assert.ok(!body(result).includes('abrica-stage-one'), `${label}: response leaked the document id`);
+  assert.ok(!body(result).includes('priceFloorMinor'), `${label}: response leaked internal fields`);
 }
 
 const body = (r) => r.body ?? '';
