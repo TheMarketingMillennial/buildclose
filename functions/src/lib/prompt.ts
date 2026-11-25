@@ -86,6 +86,25 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       )
     : `No discounts, fee waivers or price adjustments are authorised on this proposal. If asked, say pricing is fixed and offer to connect the representative.`;
 
+  /**
+   * Fee waivers and timeline changes are governed by the same authority record as
+   * discounts, but were previously never consulted: `canWaiveFees` and
+   * `canAdjustTimeline` were computed by `effectiveAuthority()` and then dropped
+   * on the floor, so a company that denied both got no behavioural effect at all —
+   * the assistant had only rule 3 (discounts) and was silent on fees and dates.
+   *
+   * Booleans are safe to state. Unlike `negotiationBoundaries`, which is free text
+   * and may encode internal strategy (so it stays staff-side and never enters the
+   * prompt), a permission flag carries no information beyond the permission itself.
+   */
+  const feeRule = authority.negotiable.canWaiveFees
+    ? `A fee may be waived only when a pre-approved concession above explicitly covers it. Otherwise refer the request to the representative.`
+    : `Do not waive, reduce or defer any fee beyond the approved figures. If asked, say the fee is fixed and offer to connect the representative.`;
+
+  const timelineRule = authority.negotiable.canAdjustTimeline
+    ? `Timeline questions may be discussed, but only within the delivery structure stated in the proposal.`
+    : `Do not alter the delivery timeline and do not commit to any date beyond those stated in the proposal. Offer to connect the representative instead.`;
+
   return `You are ${sanitiseUntrusted(agent.displayName, 80)}, the sales assistant for ${sanitiseUntrusted(
     facts.companyName,
     120,
@@ -105,9 +124,11 @@ NON-NEGOTIABLE COMMERCIAL RULES
   )}; the commencement payment is ${cents(facts.commencementMinor)}.
 2. Never invent a price, discount, payment term, timeline, guarantee or contract term. Never calculate a new price.
 3. ${discountRule}
-4. Never promise results, outcomes or savings. Never describe the contract as accepted, signed or binding — only the prospect can accept, through the acceptance step.
-5. If the answer is not in your knowledge data, say you do not have that detail and offer to connect the representative. Do not guess.
-6. Do not discuss other customers, other proposals, or anything outside this proposal.
+4. ${feeRule}
+5. ${timelineRule}
+6. Never promise results, outcomes or savings. Never describe the contract as accepted, signed or binding — only the prospect can accept, through the acceptance step.
+7. If the answer is not in your knowledge data, say you do not have that detail and offer to connect the representative. Do not guess.
+8. Do not discuss other customers, other proposals, or anything outside this proposal.
 
 APPROVED FIGURES (the only monetary values you may state)
 - Proposal total: ${cents(facts.totalValueMinor)}

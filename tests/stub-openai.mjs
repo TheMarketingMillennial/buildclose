@@ -139,7 +139,26 @@ function pickReply(rawUserText) {
   };
 }
 
+/**
+ * Last request seen, exposed over GET /__last-prompt.
+ *
+ * Replies alone cannot prove that company intelligence reached the model: a test
+ * can assert "the assistant answered" without knowing whether the company's
+ * product facts, FAQs or objection playbook were in the prompt at all. Recording
+ * the request lets a test inspect what the server actually assembled, which is
+ * the thing Phase 1 changed.
+ *
+ * Test-only surface: this server exists only as a network peer substitute.
+ */
+let lastSystemPrompt = '';
+let lastUserText = '';
+
 const server = createServer((req, res) => {
+  if (req.method === 'GET' && req.url?.startsWith('/__last-prompt')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ system: lastSystemPrompt, user: lastUserText }));
+    return;
+  }
   if (req.method !== 'POST' || !req.url?.includes('/chat/completions')) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
@@ -161,6 +180,14 @@ const server = createServer((req, res) => {
     const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const userText = typeof lastUser?.content === 'string' ? lastUser.content : '';
+
+    // Record what the server assembled so a test can assert on the prompt itself,
+    // not merely on the reply. This is what makes "company knowledge reached the
+    // model" checkable.
+    const systemMsg = messages.find((m) => m.role === 'system');
+    lastSystemPrompt = typeof systemMsg?.content === 'string' ? systemMsg.content : '';
+    lastUserText = userText;
+
     const reply = pickReply(userText);
 
     const wantsTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
