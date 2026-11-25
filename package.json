@@ -1,20 +1,23 @@
 {
-  "name": "webapp",
-  "type": "module",
+  "name": "buildclose",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BuildClose — AI post-proposal sales automation. Build the proposal. Close the deal.",
+  "workspaces": [
+    "functions"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "wrangler pages dev",
-    "deploy": "npm run build && wrangler pages deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
-  },
-  "dependencies": {
-    "hono": "^4.13.14"
+    "emu": "firebase emulators:start --only auth,firestore,storage,functions",
+    "emu:seed": "npm run build:functions && node seed/run.mjs",
+    "build:functions": "npm --workspace functions run build",
+    "test": "node --test tests/",
+    "test:security": "node --test tests/security.test.mjs",
+    "lint": "npm --workspace functions run typecheck"
   },
   "devDependencies": {
-    "@hono/vite-build": "^1.11.1",
-    "@hono/vite-dev-server": "^0.26.1",
-    "vite": "^8.1.4",
-    "wrangler": "^4.110.0"
+    "firebase-tools": "^15.37.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

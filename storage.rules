@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// BuildClose — Cloud Storage rules
+//
+// Proposal documents and supporting materials are uploaded through a Cloud
+// Function that validates tenant ownership and writes object metadata itself.
+// Clients never receive a Storage bearer path they can use directly, so all
+// direct access is denied. Downloads are served as short-lived signed URLs
+// minted by the `staffProposalDocuments` function after an ownership check.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

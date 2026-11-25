@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// BuildClose — Firestore security rules
+//
+// DELIBERATE POSTURE: default deny for ALL direct client access.
+//
+// Rationale (requirements 4 and 5):
+//   BuildClose stores commercially sensitive material — price floors, negotiation
+//   boundaries, objection playbooks, competitor counter-strategies — in dedicated
+//   `internal` documents. Field-level rules would still return the document
+//   envelope and are easy to regress; a single mis-scoped rule would leak a rival
+//   tenant's pricing. So no client (staff dashboard, chat iframe, prospect browser)
+//   reads or writes Firestore directly.
+//
+//   Every read and write is mediated by a Cloud Function that:
+//     - verifies Firebase Auth ID token + custom claims (staff), or
+//     - verifies a signed prospect session bound to one proposal (prospect),
+//     - enforces tenant scoping server-side before touching a document,
+//     - returns explicit DTOs rather than raw documents.
+//
+//   This block is the outer boundary. tests/security.test.mjs verifies that
+//   unauthenticated and cross-tenant direct reads/writes are refused.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

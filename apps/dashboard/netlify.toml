@@ -1,0 +1,25 @@
+# BuildClose — admin origin (app.buildclose.app)
+#
+# Staff-only dashboard. Never frameable, no inline scripts, and its CSP allows
+# exactly the Firebase and Cloud Functions endpoints it calls.
+#
+# Deploy:  netlify deploy --prod --dir apps/dashboard   (site: buildclose-app)
+
+[build]
+  publish = "apps/dashboard"
+  # Generates config.js from Netlify environment variables so no Firebase key is
+  # committed to the repository.
+  command = "node scripts/write-dashboard-config.mjs"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=(), payment=()"

@@ -1,0 +1,25 @@
+# BuildClose — embed origin (embed.buildclose.app)
+#
+# Serves ONLY the widget loader. This site must stay trivially small and
+# dependency-free: it is injected into customer pages, so its only job is to
+# deliver widget.js quickly and cacheably.
+#
+# Deploy:  netlify deploy --prod --dir apps/embed   (site: buildclose-embed)
+
+[build]
+  publish = "apps/embed"
+
+[[headers]]
+  for = "/widget.js"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=300, stale-while-revalidate=86400"
+    X-Content-Type-Options = "nosniff"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # The loader is served to third-party pages; it must not be frameable itself.
+    X-Frame-Options = "DENY"
