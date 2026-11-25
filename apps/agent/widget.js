@@ -3,7 +3,7 @@
  * Build the proposal. Close the deal.
  *
  * Usage (paste where you want the launcher to appear):
- *   <script src="https://embed.buildclose.app/widget.js"
+ *   <script src="https://agent.buildclose.app/widget.js"
  *           data-bc="bc_pk_…"        // prospect access token for this proposal
  *           data-label="Questions about this proposal?"
  *           defer></script>
@@ -12,8 +12,9 @@
  *  - The token NEVER enters a URL. It is handed to the iframe with postMessage
  *    after an origin handshake, so it cannot leak via Referer headers, browser
  *    history, or server access logs.
- *  - The chat runs on its own origin (chat.buildclose.app), isolated from both
- *    this page and the admin dashboard. This page cannot read the conversation.
+ *  - The chat runs on agent.buildclose.app, isolated from both the customer page
+ *    it is embedded in and the admin dashboard (app.buildclose.app). This page
+ *    cannot read the conversation.
  *  - No dependencies, no build step, ~5 KB.
  */
 (function () {
@@ -28,8 +29,8 @@
     return;
   }
 
-  // Where the chat app lives. Overridable for staging.
-  var CHAT_ORIGIN = (script.getAttribute('data-chat-origin') || 'https://chat.buildclose.app').replace(/\/+$/, '');
+  // Where the chat app lives. Overridable for staging or self-hosting.
+  var CHAT_ORIGIN = (script.getAttribute('data-chat-origin') || 'https://agent.buildclose.app').replace(/\/+$/, '');
 
   var LABEL = script.getAttribute('data-label') || 'Questions about this proposal?';
   var ACCENT = script.getAttribute('data-accent') || '#1B3A6B';

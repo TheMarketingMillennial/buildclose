@@ -1,15 +1,19 @@
-# BuildClose — admin origin (app.buildclose.app)
+# BuildClose — customer dashboard (app.buildclose.app)
 #
 # Staff-only dashboard. Never frameable, no inline scripts, and its CSP allows
 # exactly the Firebase and Cloud Functions endpoints it calls.
 #
+# NETLIFY SETUP: set this site's Base directory to `apps/dashboard`. `publish`
+# and `command` below are then resolved relative to that folder — which is why
+# publish is "." and not "apps/dashboard".
+#
 # Deploy:  netlify deploy --prod --dir apps/dashboard   (site: buildclose-app)
 
 [build]
-  publish = "apps/dashboard"
+  publish = "."
   # Generates config.js from Netlify environment variables so no Firebase key is
   # committed to the repository.
-  command = "node scripts/write-dashboard-config.mjs"
+  command = "node build.mjs"
 
 [[redirects]]
   from = "/*"
@@ -23,3 +27,7 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "geolocation=(), microphone=(), camera=(), payment=()"
+    # The dashboard is never framed and must not be cached: it renders
+    # tenant-scoped data behind an authenticated session.
+    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://*.cloudfunctions.net https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.run.app; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+    Cache-Control = "no-store"

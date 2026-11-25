@@ -9,9 +9,10 @@
 </head>
 <body>
 <!--
-  The chat app runs on chat.buildclose.app, a different origin from both the
-  hosting proposal page and the admin dashboard (requirement 3). It receives its
-  proposal token from the parent widget via postMessage, never from the URL.
+  The chat app runs on agent.buildclose.app — the AI chatbot infrastructure host.
+  It is a different origin from the customer dashboard (app.buildclose.app),
+  which is what requirement 3 demands. It receives its proposal token from the
+  parent widget via postMessage, never from the URL.
 -->
 <main id="app" class="app" data-state="loading">
 
@@ -133,6 +134,9 @@
 
 </main>
 
+<!-- Generated at deploy time by build.mjs: sets window.__BC_API_BASE__ so the
+     client knows where Cloud Functions lives. Same-origin, allowed by script-src 'self'. -->
+<script src="/config.js"></script>
 <script type="module" src="/embed/app.js"></script>
 </body>
 </html>

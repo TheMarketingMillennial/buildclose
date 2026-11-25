@@ -11,10 +11,18 @@
 import type { Request, Response, NextFunction } from 'express';
 import { allowedCorsOrigin, getConfig } from '../lib/config.js';
 
-/** Origins permitted to call the prospect API: the chat app, plus dev hosts. */
+/**
+ * Origins permitted to call the prospect API.
+ *
+ * Only the chat app qualifies. The embeddable widget never calls the API — it
+ * posts a message into the chat iframe — and the dashboard talks to the staff
+ * callables, not here. Keeping this list to the single chat origin is what makes
+ * the CORS check meaningful: a customer page holding a valid token still cannot
+ * call the API directly, because its origin is not on this list.
+ */
 export function permittedApiOrigins(): string[] {
   const cfg = getConfig();
-  const base = [cfg.chatOrigin, cfg.embedOrigin];
+  const base = [cfg.chatOrigin];
   if (process.env.FUNCTIONS_EMULATOR === 'true' || process.env.NODE_ENV !== 'production') {
     base.push('http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4321', 'http://127.0.0.1:4321');
   }

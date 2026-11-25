@@ -1,7 +1,8 @@
 /**
  * BuildClose — prospect chat app (embed surface).
  *
- * Runs on chat.buildclose.app, its own origin. Identity model:
+ * Runs on agent.buildclose.app — the AI chatbot infrastructure host, which is a
+ * different origin from the customer dashboard (app.buildclose.app). Identity model:
  *
  *   1. The parent widget loads this page in a sandboxed iframe.
  *   2. We announce readiness with `bc:ready`.

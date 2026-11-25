@@ -35,6 +35,9 @@ functions/.secret.local
 # netlify
 .netlify/
 
+# generated at deploy time from environment variables (never commit)
+apps/*/config.js
+
 # os / editor
 .DS_Store
 Thumbs.db

@@ -49,9 +49,13 @@ export function getConfig(): RuntimeConfig {
     openaiBaseUrl: optional('OPENAI_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''),
     openaiModel: optional('OPENAI_MODEL', 'gpt-6.1-sol'),
     sessionSecret: required('SESSION_SECRET'),
-    chatOrigin: optional('CHAT_ORIGIN', 'https://chat.buildclose.app'),
+    // Requirement 3: the prospect chat surface must not share an origin with the
+    // staff dashboard. `agent.` is the chatbot infrastructure (the framed chat
+    // app and the API caller); `app.` is the customer dashboard.
+    chatOrigin: optional('CHAT_ORIGIN', 'https://agent.buildclose.app'),
     dashboardOrigin: optional('DASHBOARD_ORIGIN', 'https://app.buildclose.app'),
-    embedOrigin: optional('EMBED_ORIGIN', 'https://embed.buildclose.app'),
+    // widget.js is served by the commercial site, so it needs no fourth hostname.
+    embedOrigin: optional('EMBED_ORIGIN', 'https://buildclose.app'),
     appBaseUrl: optional('APP_BASE_URL', 'https://buildclose.app'),
     // Separate salt so a leaked hash cannot be reversed by guessing IPs.
     ipSalt: optional('IP_SALT', 'buildclose-dev-salt'),

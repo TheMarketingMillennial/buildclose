@@ -1,0 +1,34 @@
+# BuildClose — AI chatbot infrastructure (agent.buildclose.app)
+#
+# ONE site serving two things:
+#   /widget.js    the ~5 KB loader pasted into customer proposal pages
+#   /embed        the framed chat app that actually talks to prospects
+#
+# Why one host instead of two: requirement 3 only demands that the chatbot
+# surface not share an origin with the admin dashboard (app.buildclose.app).
+# Keeping the loader and the framed app together means the trusted-origin list
+# stays short, the postMessage handshake is a same-origin hop, and the customer
+# needs no fourth DNS record for a small script.
+#
+# NETLIFY SETUP: set this site's Base directory to `apps/agent`. `publish`
+# and `command` below are then resolved relative to that folder — which is why
+# publish is "." and not "apps/agent".
+#
+# Deploy:  netlify deploy --prod --dir apps/agent   (site: buildclose-agent)
+
+[build]
+  publish = "."
+  # Injects the Cloud Functions base URL into config.js. Without it the chat app
+  # would resolve API_BASE to '' and call this static host instead of the backend.
+  command = "node build.mjs"
+
+# The framed app lives at /embed; the bare root is not a product surface.
+[[redirects]]
+  from = "/"
+  to = "/embed/index.html"
+  status = 302
+
+[[redirects]]
+  from = "/embed"
+  to = "/embed/index.html"
+  status = 200
