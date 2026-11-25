@@ -108,8 +108,19 @@ export type AgentConfigInput = z.infer<typeof AgentConfigInput>;
 // ---------------------------------------- internal record (NEVER sent to prospect)
 // Requirement 4: kept in a separate document with no client read path at all.
 export const ProposalInternalInput = z.object({
-  priceFloorMinor: z.number().int().nonnegative(),
-  maxDiscountPercent: z.number().min(0).max(100),
+  /**
+   * Defaults are deliberate, and they are the SAFE direction.
+   *
+   * createProposal() documents that a proposal with no internal record "defaults
+   * to no discount authority", and then parses `{ companyId }` only. Without
+   * defaults that parse threw, so every proposal created without an explicit
+   * internal block — i.e. every proposal created by a sales_rep, and every
+   * proposal created by the dashboard with the internal fields left alone —
+   * failed with an opaque INTERNAL error. A missing floor must mean "no
+   * concession authorised", never "unlimited concession" and never "crash".
+   */
+  priceFloorMinor: z.number().int().nonnegative().default(0),
+  maxDiscountPercent: z.number().min(0).max(100).default(0),
   negotiationBoundaries: z.array(z.string().max(600)).max(30).default([]),
   competitorNotes: z
     .array(z.object({ competitor: z.string().max(120), posture: z.string().max(800) }))

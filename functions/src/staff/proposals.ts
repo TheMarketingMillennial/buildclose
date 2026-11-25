@@ -37,6 +37,20 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
   if (!parsed.success) throw new HttpsError('invalid-argument', parsed.error.issues[0]?.message ?? 'Invalid proposal');
   const { proposal, internal, agent } = parsed.data;
 
+  /**
+   * Commercial authority and assistant configuration are CONFIG_ROLES concerns on
+   * create, exactly as they are on update.
+   *
+   * Without this, updateProposal's gate was trivially bypassable: a sales_rep has
+   * PROPOSAL_ROLES, so they could simply create the proposal with
+   * `internal: { maxDiscountPercent: 100, priceFloorMinor: 0 }` and hand
+   * themselves the discount authority the update path refuses them. The same
+   * applied to `agent`, which controls what the assistant may claim to a
+   * prospect. Requiring the role here keeps one rule for the whole lifecycle.
+   */
+  const wantsConfig = (internal && Object.keys(internal).length > 0) || (agent && Object.keys(agent).length > 0);
+  if (wantsConfig) requireRole(identity, CONFIG_ROLES);
+
   const ref = db.collection(COLLECTIONS.proposals).doc();
   const now = FieldValue.serverTimestamp();
 
@@ -71,13 +85,27 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
     db.collection(COLLECTIONS.agentConfigs).doc(ref.id),
     AgentConfigInput.parse({ ...(agent ?? {}), ctaLinks: agent?.ctaLinks ?? [] }),
   );
-  batch.set(
-    db.collection(COLLECTIONS.proposalInternal).doc(ref.id),
-    ProposalInternalInput.parse({
-      ...(internal ?? {}),
-      companyId: identity.companyId,
-    }),
-  );
+    batch.set(
+      db.collection(COLLECTIONS.proposalInternal).doc(ref.id),
+      /**
+       * companyId is applied AFTER parsing, never before.
+       *
+       * ProposalInternalInput does not declare a companyId field, so Zod strips
+       * it. Passing it into parse() therefore produced an internal record with no
+       * tenant, which broke two things at once:
+       *   - getProposal's identifyTenantMismatch() saw companyId undefined and
+       *     withheld the record from the admins entitled to read it;
+       *   - resolveProspectContext() compares the internal record's companyId to
+       *     the session tenant and throws not_found on mismatch, so EVERY proposal
+       *     created through the dashboard would have 404'd for the prospect.
+       * Keeping the server-assigned value outside the parsed object also means a
+       * caller cannot smuggle a companyId in through the `internal` payload.
+       */
+      {
+        ...ProposalInternalInput.parse(internal ?? {}),
+        companyId: identity.companyId,
+      },
+    );
   await batch.commit();
 
   await audit({
@@ -162,7 +190,16 @@ export const listProposals = onCall({ region: REGION }, async (request) => {
 // ----------------------------------------------------------------- update
 const UpdateInput = z.object({
   id: z.string().min(1),
-  proposal: ProposalInput.partial(),
+  /**
+   * `proposal` is OPTIONAL, and must be.
+   *
+   * The dashboard's assistant tab calls updateProposal with `{ id, agent }` only —
+   * it is editing the assistant, not the commercial terms. Because `proposal` was
+   * required, that call was rejected with "Invalid update payload" and saving
+   * assistant configuration from the dashboard could never work. Only `id` is
+   * genuinely required; every other block is an independent, partial update.
+   */
+  proposal: ProposalInput.partial().optional(),
   internal: ProposalInternalInput.partial().optional(),
   agent: AgentConfigInput.partial().optional(),
 });
