@@ -28,6 +28,8 @@ import { generateReply, AiError } from '../lib/ai.js';
 import { buildSystemPrompt, buildUserTurn } from '../lib/prompt.js';
 import { validateCommercial, looksLikeInjection, safeFallbackReply } from '../lib/commercial.js';
 import { computeCost } from '../lib/pricing.js';
+import { resolveCompanyEntitlements } from '../lib/entitlementStore.js';
+import { checkAiBudget, effectiveAiBudgetUsd } from '../lib/entitlements.js';
 import { resolveProspectContext, resolveCta } from '../lib/context.js';
 import {
   ensureConversation,
@@ -109,9 +111,25 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
   }
 
   // ---- 4. budget check ----
+  /**
+   * The allowance is the TIGHTER of the company's own setting and whatever the
+   * tenant's plan includes — the same "tighter of two" rule as commercial
+   * authority, applied to spend.
+   *
+   * Why this replaced reading `companyData.aiBudgetUsd` alone: that field is
+   * writable by the tenant, so a company on a plan including $30 could have set
+   * it to $10,000 and spent against the platform's margin. The plan cap now
+   * bounds it. A grandfathered tenant (no subscription) resolves to a `null` plan
+   * cap, so `effectiveAiBudgetUsd` returns their own setting unchanged — which is
+   * exactly the pre-billing behaviour, and why the 113-test baseline holds.
+   */
   const companySnap = await db.collection(COLLECTIONS.companies).doc(ctx.companyId).get();
   const companyData = companySnap.data() as { aiBudgetUsd?: number } | undefined;
-  const budgetUsd = Number(companyData?.aiBudgetUsd ?? DEFAULT_BUDGET_USD);
+  const companyBudgetUsd = Number(companyData?.aiBudgetUsd ?? DEFAULT_BUDGET_USD);
+
+  const ent = await resolveCompanyEntitlements(ctx.companyId);
+  const effectiveBudgetUsd = effectiveAiBudgetUsd(ent, companyBudgetUsd);
+
   const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
   const usageSnap = await db
     .collection(COLLECTIONS.aiUsage)
@@ -121,13 +139,14 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
     .get();
   const spentMicro = usageSnap.docs.reduce((sum, d) => sum + Number((d.data() as { costMicroUsd?: number }).costMicroUsd ?? 0), 0);
 
-  if (spentMicro >= budgetUsd * 1_000_000) {
+  const budgetDecision = checkAiBudget(ent, spentMicro, companyBudgetUsd);
+  if (!budgetDecision.allowed) {
     await audit({
       companyId: ctx.companyId,
       action: 'budget.exceeded',
       actorType: 'system',
       proposalId: ctx.proposalId,
-      detail: { monthKey, budgetUsd },
+      detail: { monthKey, budgetUsd: effectiveBudgetUsd, planState: ent.state, source: budgetDecision.code },
     });
     throw new AppError(503, 'budget_exceeded', 'AI budget exhausted for this month');
   }

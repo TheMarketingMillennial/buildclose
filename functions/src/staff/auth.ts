@@ -48,6 +48,34 @@ export function requireRole(identity: StaffIdentity, allowed: Role[]): void {
 
 /** Roles permitted to change commercially sensitive configuration. */
 export const CONFIG_ROLES: Role[] = ['company_admin', 'sales_manager'];
+
+/**
+ * Authorise a cross-tenant, platform-level action (the plan catalogue, pilot
+ * grants).
+ *
+ * Separate from `requireStaff` because that helper REFUSES a token that carries
+ * no `companyId`, and a platform operator legitimately belongs to no tenant. It
+ * still requires a verified uid and the `platform_admin` claim, so nothing here
+ * is reachable anonymously or by a tenant role.
+ */
+export function requirePlatformAdmin(request: CallableRequest): StaffIdentity & { companyId: string } {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
+
+  const token = request.auth?.token as Record<string, unknown> | undefined;
+  const role = typeof token?.role === 'string' ? (token.role as Role) : undefined;
+  if (role !== 'platform_admin') {
+    throw new HttpsError('permission-denied', 'Platform administrator access required');
+  }
+
+  return {
+    uid,
+    email: typeof token?.email === 'string' ? token.email : '',
+    // May be empty: a platform operator need not belong to a tenant.
+    companyId: typeof token?.companyId === 'string' ? token.companyId : '',
+    role,
+  };
+}
 /** Roles permitted to create/edit proposals they own. */
 export const PROPOSAL_ROLES: Role[] = ['company_admin', 'sales_manager', 'sales_rep'];
 

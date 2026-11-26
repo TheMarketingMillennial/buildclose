@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { auth, db, COLLECTIONS, FieldValue, type Role } from '../lib/firebase.js';
 import { requireStaff, requireRole } from './auth.js';
 import { audit } from '../lib/audit.js';
+import { assertCanAddUser } from '../lib/guard.js';
 
 const REGION = 'us-central1';
 
@@ -44,6 +45,33 @@ export const inviteStaff = onCall({ region: REGION }, async (request) => {
 
   if (RANK[role] >= RANK[identity.role] && identity.role !== 'platform_admin') {
     throw new HttpsError('permission-denied', 'You cannot assign a role at or above your own');
+  }
+
+  /**
+   * Plan seat limit, checked BEFORE the Auth user is created.
+   *
+   * The order is load-bearing. Creating the Firebase Auth user first and then
+   * refusing would leave a real account, and a real record, behind for a seat the
+   * tenant did not buy — repeatedly inviting and being refused would slowly fill
+   * the tenant with orphaned users that `countCompanyUsers` then counts against
+   * them, making the limit self-worsening. Check first, create second.
+   *
+   * Re-inviting somebody who is already a member does not consume a new seat, so
+   * the guard is skipped for a known member of this company. Without that, an
+   * admin resending a broken invite would hit a corporate limit that was not
+   * actually being exceeded.
+   */
+  const existingUserForSeat = await (async () => {
+    try {
+      const u = await auth.getUserByEmail(email);
+      const snap = await db.collection(COLLECTIONS.users).doc(u.uid).get();
+      return snap.exists && (snap.data() as { companyId?: string }).companyId === identity.companyId ? u : null;
+    } catch {
+      return null; // No such account: a genuinely new seat.
+    }
+  })();
+  if (!existingUserForSeat) {
+    await assertCanAddUser(identity.companyId, identity.uid);
   }
 
   let user;

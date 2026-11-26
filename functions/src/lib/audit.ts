@@ -29,6 +29,23 @@ export type AuditAction =
   | 'staff.invited'
   | 'role.changed'
   | 'subscription.updated'
+  /** Plan catalogue changes. Platform-level, but recorded with the operator. */
+  | 'plan.created'
+  | 'plan.updated'
+  | 'plan.deactivated'
+  /**
+   * A pilot grant or its removal. Always attributable to the operator who did it,
+   * because a pilot is a commercial decision and "who gave this customer free
+   * access, and until when" has to be answerable months later.
+   */
+  | 'entitlement.override_set'
+  | 'entitlement.override_cleared'
+  /**
+   * An action refused because the tenant's plan did not allow it. Recorded so a
+   * customer who says "the product stopped letting me create proposals" has an
+   * answer in the trail rather than a guess.
+   */
+  | 'entitlement.blocked'
   /**
    * Retention purge. Recorded as a system actor with the counts and the policy
    * that justified the deletion, so the trail can answer "what was destroyed,

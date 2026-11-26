@@ -22,6 +22,7 @@ import { mintProposalToken } from '../lib/tokens.js';
 import { hashProposalDocument } from '../lib/context.js';
 import { audit } from '../lib/audit.js';
 import { getConfig } from '../lib/config.js';
+import { assertCanCreateProposal } from '../lib/guard.js';
 
 const REGION = 'us-central1';
 
@@ -56,6 +57,16 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
    */
   const wantsConfig = (internal && Object.keys(internal).length > 0) || (agent && Object.keys(agent).length > 0);
   if (wantsConfig) requireRole(identity, CONFIG_ROLES);
+
+  /**
+   * Plan enforcement, placed AFTER the role checks and BEFORE any write.
+   *
+   * Order matters: a rep who is not allowed to configure a proposal should get
+   * "permission denied", not "you are out of proposals" — otherwise a lapsed
+   * tenant's rep is told the wrong reason and files a support ticket about the
+   * wrong thing. Role first (who you are), then entitlement (what you bought).
+   */
+  await assertCanCreateProposal(identity.companyId, identity.uid);
 
   const ref = db.collection(COLLECTIONS.proposals).doc();
   const now = FieldValue.serverTimestamp();
@@ -505,6 +516,15 @@ export const duplicateProposal = onCall({ region: REGION }, async (request) => {
   if (!srcSnap.exists) throw new HttpsError('not-found', 'Proposal not found');
   const src = srcSnap.data() as Record<string, unknown>;
   assertProposalAccess(identity, src as { companyId?: string; ownerUid?: string });
+
+  /**
+   * A duplicate IS a new proposal and must count against the plan.
+   *
+   * Without this, the active-proposal limit was bypassable with one call: hit the
+   * limit, duplicate an existing proposal, repeat. The check has to live here as
+   * well as in createProposal precisely because they are separate write paths.
+   */
+  await assertCanCreateProposal(identity.companyId, identity.uid);
 
   const [agentSnap, internalSnap] = await Promise.all([
     db.collection(COLLECTIONS.agentConfigs).doc(parsed.data.id).get(),

@@ -55,6 +55,19 @@ export const COLLECTIONS = {
   documents: 'documents',
   rateLimits: 'rateLimits',
   subscriptions: 'subscriptions',
+  /**
+   * Purchasable plans. Company-wide, not tenant-scoped: one operator defines the
+   * catalogue. Holds limits and Stripe price ids, never an amount — Stripe owns
+   * every price.
+   */
+  plans: 'plans',
+  /**
+   * Sanctioned pilot grants, keyed by companyId. Separate from `subscriptions`
+   * on purpose: a pilot is an administrative decision about a tenant, not a
+   * billing state reported by Stripe, and conflating the two would let a webhook
+   * overwrite a grant (or a grant mask a real payment failure).
+   */
+  entitlementOverrides: 'entitlementOverrides',
 } as const;
 
 export type Role = 'platform_admin' | 'company_admin' | 'sales_manager' | 'sales_rep';

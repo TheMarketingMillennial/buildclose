@@ -75,6 +75,15 @@ export {
 
 export { createCheckoutSession, stripeWebhook } from './staff/stripe.js';
 
+export {
+  listPlans,
+  getCompanyEntitlements,
+  createPlan,
+  updatePlan,
+  setEntitlementOverride,
+  clearEntitlementOverride,
+} from './staff/billing.js';
+
 // ------------------------------------------------------------------- jobs
 // The scheduled purge is what makes the retention disclosure shown to a prospect
 // true. The callable twin exists for on-request deletions and for the emulator,

@@ -19,6 +19,8 @@ import { db, COLLECTIONS, FieldValue } from '../lib/firebase.js';
 import { getConfig } from '../lib/config.js';
 import { requireStaff, requireRole } from './auth.js';
 import { audit } from '../lib/audit.js';
+import { sellablePlan } from '../lib/entitlements.js';
+import { loadPlans } from '../lib/entitlementStore.js';
 
 const REGION = 'us-central1';
 
@@ -38,10 +40,58 @@ export const createCheckoutSession = onCall(
   const identity = requireStaff(request);
   requireRole(identity, ['company_admin']);
 
-  const parsed = z.object({ priceId: z.string().min(1).max(200) }).safeParse(request.data);
-  if (!parsed.success) throw new HttpsError('invalid-argument', 'Missing price id');
+  /**
+   * The caller identifies a PLAN, not a price.
+   *
+   * Accepting a raw `priceId` from the browser would let a company admin post any
+   * Stripe price id they can guess — including an internal or grandfathered price
+   * belonging to another tier. Resolving the price server-side from a plan in our
+   * own catalogue means the only purchasable prices are the ones an operator
+   * attached to a sellable plan.
+   */
+  const parsed = z
+    .object({
+      planId: z.string().min(1).max(60),
+      /** Monthly vs annual, chosen among the plan's prices; defaults to the first. */
+      interval: z.enum(['month', 'year']).optional(),
+    })
+    .safeParse(request.data);
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Missing plan id');
+
+  const plans = await loadPlans();
+  const plan = sellablePlan(plans, parsed.data.planId);
+  if (!plan) {
+    throw new HttpsError('failed-precondition', 'That plan is not available for purchase');
+  }
+  if (plan.stripePriceIds.length === 0) {
+    throw new HttpsError('failed-precondition', 'That plan has no price configured');
+  }
 
   const stripe = stripeClient();
+
+  /**
+   * Pick the price for the requested billing interval.
+   *
+   * The plan stores only price IDS, never amounts, so the interval is resolved by
+   * asking Stripe to expand each candidate price and reading its `recurring`
+   * interval. If Stripe cannot be reached the first price is used, because a
+   * working checkout on the default interval beats a hard failure.
+   */
+  let priceId = plan.stripePriceIds[0]!;
+  if (parsed.data.interval && plan.stripePriceIds.length > 1) {
+    for (const candidate of plan.stripePriceIds) {
+      try {
+        const price = await stripe.prices.retrieve(candidate);
+        if (price.recurring?.interval === parsed.data.interval) {
+          priceId = candidate;
+          break;
+        }
+      } catch {
+        // Ignore an unresolvable candidate and keep looking.
+      }
+    }
+  }
+
   const cfg = getConfig();
 
   const companySnap = await db.collection(COLLECTIONS.companies).doc(identity.companyId).get();
@@ -62,10 +112,13 @@ export const createCheckoutSession = onCall(
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: parsed.data.priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${cfg.dashboardOrigin}/billing?status=success`,
     cancel_url: `${cfg.dashboardOrigin}/billing?status=cancelled`,
-    subscription_data: { metadata: { companyId: identity.companyId } },
+    // The plan id travels with the subscription so the webhook does not have to
+    // re-derive it from the price on the first event.
+    subscription_data: { metadata: { companyId: identity.companyId, planId: plan.id } },
+    metadata: { companyId: identity.companyId, planId: plan.id },
   });
 
   return { url: session.url };
@@ -113,6 +166,11 @@ export const stripeWebhook = onRequest(
             status: 'active',
             stripeCustomerId: typeof s.customer === 'string' ? s.customer : null,
             stripeSubscriptionId: typeof s.subscription === 'string' ? s.subscription : null,
+            // The plan chosen at checkout. `customer.subscription.created` will
+            // arrive with the authoritative price and may overwrite this, but
+            // recording it here means a tenant is never momentarily entitled to
+            // nothing between the two events.
+            planId: s.metadata?.planId ?? null,
           });
         }
         break;
@@ -122,12 +180,25 @@ export const stripeWebhook = onRequest(
         const sub = event.data.object as Stripe.Subscription;
         const companyId = sub.metadata?.companyId;
         if (companyId) {
+          const priceId = sub.items.data[0]?.price.id ?? null;
           await upsertSubscription(companyId, {
             status: sub.status,
             stripeSubscriptionId: sub.id,
             currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end * 1000) : null,
             cancelAtPeriodEnd: sub.cancel_at_period_end,
-            priceId: sub.items.data[0]?.price.id ?? null,
+            priceId,
+            /**
+             * Resolve the plan from the subscription's METADATA first, then from
+             * the price.
+             *
+             * Metadata is what we set at checkout, so it survives a price that an
+             * operator later moved between plans. The price lookup is the fallback
+             * for subscriptions created directly in the Stripe dashboard, where no
+             * metadata exists — that path is common during a pilot when an operator
+             * sets a customer up by hand, and without the fallback those customers
+             * would silently resolve to no plan at all.
+             */
+            planId: sub.metadata?.planId ?? (await planIdForPrice(priceId)),
           });
         }
         break;
@@ -173,6 +244,26 @@ export const stripeWebhook = onRequest(
   }
 });
 
+/**
+ * Map a Stripe price to one of our plan ids.
+ *
+ * Returns null rather than throwing. A price we cannot map means a subscription
+ * created outside checkout — normal during a pilot — and the resolver's own
+ * "unknown plan" path already fails closed on growth while leaving live
+ * conversations running. Throwing here would make the webhook return 500, and
+ * Stripe would retry a permanently unfixable event for days.
+ */
+async function planIdForPrice(priceId: string | null): Promise<string | null> {
+  if (!priceId) return null;
+  try {
+    const plans = await loadPlans();
+    return plans.find((p) => p.stripePriceIds.includes(priceId))?.id ?? null;
+  } catch (err) {
+    console.error('[stripe] plan lookup failed for price', priceId, (err as Error).message);
+    return null;
+  }
+}
+
 async function upsertSubscription(
   companyId: string,
   patch: {
@@ -182,17 +273,36 @@ async function upsertSubscription(
     currentPeriodEnd?: Date | null;
     cancelAtPeriodEnd?: boolean;
     priceId?: string | null;
+    /**
+     * The plan this subscription grants.
+     *
+     * `undefined` means "leave whatever is stored alone" — not "clear it". That
+     * distinction matters: `invoice.payment_failed` carries no plan information,
+     * so if its patch cleared the field a customer's plan would vanish the first
+     * time a card was declined, and they would be restricted as an *unresolved
+     * plan* rather than as a payment failure. A deliberate `null` still clears.
+     */
+    planId?: string | null;
   },
 ): Promise<void> {
   await db
     .collection(COLLECTIONS.subscriptions)
     .doc(companyId)
-    .set({ companyId, ...patch, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    .set(
+      {
+        companyId,
+        ...patch,
+        // `undefined` is not a legal Firestore value and `set(merge)` would throw.
+        ...(patch.planId !== undefined ? { planId: patch.planId } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
 
   await audit({
     companyId,
     action: 'subscription.updated',
     actorType: 'system',
-    detail: { status: patch.status },
+    detail: { status: patch.status, ...(patch.planId ? { planId: patch.planId } : {}) },
   });
 }
