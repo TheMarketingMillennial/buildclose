@@ -40,6 +40,7 @@ import {
   proposalPayload,
   cleanupCompany,
   cleanupUsers,
+  grantInternal,
 } from './support/staff-fixture.mjs';
 
 // Distinct from integration.test.mjs's tenant ids so the two suites cannot
@@ -91,6 +92,25 @@ before(async () => {
     await db.collection('companies').doc(id).set({ name, settings: { retentionDays: 365 } }, { merge: true });
   }
   await db.collection('companies').doc(ABRICA).set({ name: 'The Marketing Millennial' }, { merge: true });
+
+  /**
+   * Explicit internal grants for both fixture tenants.
+   *
+   * Deny-by-default means a company record created by a test has no subscription
+   * and therefore no allowance: `createProposal` is refused with `no_entitlement`.
+   * Several tests here create proposals to exercise assistant-default inheritance
+   * and authority resolution, so the tenants need entitlement the same way a real
+   * development tenant gets it — an explicit, auditable grant.
+   *
+   * These are deliberately NOT pilot grants: a pilot requires an expiry, and a
+   * 24-hour clock would make this suite fail for a reason unrelated to what it
+   * tests. `internal` is the correct kind for a long-lived development tenant.
+   *
+   * This does not weaken enforcement: the suites that prove denials
+   * (entitlements.verify.test.mjs) deliberately receive no grant.
+   */
+  await grantInternal(TENANT_A, { aiMonthlyBudgetUsd: 25 });
+  await grantInternal(TENANT_B, { aiMonthlyBudgetUsd: 25 });
 
   await createStaffUser({ email: EMAILS.adminA, companyId: TENANT_A, role: 'company_admin' });
   await createStaffUser({ email: EMAILS.managerA, companyId: TENANT_A, role: 'sales_manager' });
