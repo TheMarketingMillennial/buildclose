@@ -37,6 +37,12 @@ import {
   type ResolvedEntitlements,
 } from './entitlements.js';
 import { resolveCompanyEntitlements, countCompanyUsers, countActiveProposals, totalDocumentMb } from './entitlementStore.js';
+import {
+  reserveSeat,
+  reserveProposalSlot as reserveProposalSlotTxn,
+  releaseProposalSlot,
+  releaseSeatOnRemoval,
+} from './usage.js';
 
 /** Map an entitlement code onto the HttpsError code the dashboard branches on. */
 function httpCodeFor(decision: EntitlementDecision): ConstructorParameters<typeof HttpsError>[0] {
@@ -81,24 +87,91 @@ async function enforce(
 /**
  * Adding a seat (invite, or any path that creates a user).
  *
- * Counted against EXISTING users including disabled ones — see `countCompanyUsers`
- * for why a suspended user still holds a seat.
+ * CONCURRENCY: the decision and the increment happen in ONE transaction against a
+ * counter document. A count-then-write check is racy — five parallel invites on a
+ * one-seat plan each read "0 seats" and all succeed. See lib/usage.ts for why a
+ * counter document, and not a re-counting transaction, is what actually serialises
+ * competitors.
+ *
+ * Returns a settlement handle. The caller MUST release it if the invite then
+ * fails, or the slot leaks. `reserveSeat` is deliberately not named `assert...`
+ * because it mutates state and therefore carries an obligation.
  */
-export async function assertCanAddUser(companyId: string, actorUid: string): Promise<void> {
-  const [ent, users] = await Promise.all([resolveCompanyEntitlements(companyId), countCompanyUsers(companyId)]);
-  await enforce(companyId, actorUid, 'user.create', checkCanAddUser(ent, users));
+export async function reserveUserSeat(
+  companyId: string,
+  actorUid: string,
+): Promise<{ release: () => Promise<void> }> {
+  const [ent, liveUsers] = await Promise.all([
+    resolveCompanyEntitlements(companyId),
+    countCompanyUsers(companyId),
+  ]);
+
+  // Cheap pre-check first, so the common refusal does not open a transaction.
+  const pre = checkCanAddUser(ent, liveUsers);
+  if (!pre.allowed) await enforce(companyId, actorUid, 'user.create', pre);
+
+  const { outcome, reservation } = await reserveSeat(companyId, ent.limits.maxUsers, liveUsers);
+  if (!outcome.allowed) {
+    // The authoritative check lost the race: report it with the live count.
+    await enforce(companyId, actorUid, 'user.create', {
+      allowed: false,
+      code: 'plan_limit_reached',
+      message: `Your plan includes ${ent.limits.maxUsers} user${ent.limits.maxUsers === 1 ? '' : 's'}. Upgrade to add more.`,
+      limit: ent.limits.maxUsers,
+      use: outcome.used - 1,
+    });
+  }
+
+  return { release: reservation.release };
 }
 
 /**
  * Creating a proposal (new or duplicated).
  *
- * Drafts count. A draft is a live proposal that consumes the tenant's ability to
- * run a conversation, and excluding drafts would let a company create a thousand
- * of them against a five-proposal plan.
+ * Same transactional reservation as seats. Drafts count: a draft is a live
+ * proposal that consumes the tenant's ability to run a conversation, and excluding
+ * drafts would let a company create a thousand against a five-proposal plan.
+ *
+ * The caller must `release()` if the creation itself fails after this point.
  */
-export async function assertCanCreateProposal(companyId: string, actorUid: string): Promise<void> {
-  const [ent, active] = await Promise.all([resolveCompanyEntitlements(companyId), countActiveProposals(companyId)]);
-  await enforce(companyId, actorUid, 'proposal.create', checkCanCreateProposal(ent, active));
+export async function reserveProposalSlot(
+  companyId: string,
+  actorUid: string,
+): Promise<{ release: () => Promise<void> }> {
+  const [ent, liveActive] = await Promise.all([
+    resolveCompanyEntitlements(companyId),
+    countActiveProposals(companyId),
+  ]);
+
+  const pre = checkCanCreateProposal(ent, liveActive);
+  if (!pre.allowed) await enforce(companyId, actorUid, 'proposal.create', pre);
+
+  const { outcome, reservation } = await reserveProposalSlotTxn(
+    companyId,
+    ent.limits.maxActiveProposals,
+    liveActive,
+  );
+  if (!outcome.allowed) {
+    await enforce(companyId, actorUid, 'proposal.create', {
+      allowed: false,
+      code: 'plan_limit_reached',
+      message: `Your plan includes ${ent.limits.maxActiveProposals} active proposal${ent.limits.maxActiveProposals === 1 ? '' : 's'}. Archive or upgrade to create more.`,
+      limit: ent.limits.maxActiveProposals,
+      use: outcome.used - 1,
+    });
+  }
+
+  return { release: reservation.release };
+}
+
+/** Free a proposal slot when one is archived (archived work holds no slot). */
+export async function releaseProposalSlotFor(companyId: string): Promise<void> {
+  await releaseProposalSlot(companyId);
+}
+
+/** Free a seat when a member is removed. Not yet used; exposed for symmetry. */
+export async function releaseUserSeatFor(companyId: string): Promise<void> {
+  await releaseSeatOnRemoval(companyId);
 }
 
 /**

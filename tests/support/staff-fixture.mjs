@@ -185,12 +185,35 @@ export async function cleanupCompany(companyId) {
     'users',
     'companyIntelligence',
     'companyAuthority',
+    'documents',
   ];
 
   for (const name of collections) {
     const snap = await db.collection(name).where('companyId', '==', companyId).get();
     await Promise.all(snap.docs.map((d) => d.ref.delete()));
   }
+
+  // Entitlement rows are keyed BY company id, not by a companyId field.
+  for (const name of ['subscriptions', 'entitlementOverrides']) {
+    await db.collection(name).doc(companyId).delete().catch(() => {});
+  }
+
+  /**
+   * Usage counters are keyed by company id (seats/proposals) and by
+   * `ai__<company>__<month>` (AI budget). A fixture company that left a counter
+   * behind would poison the next run of the same derived id, so both shapes go.
+   * AI counters are matched by id prefix; Firestore `!=` on a null is invalid, so
+   * the document id is filtered in code rather than by a query operator.
+   */
+  const counters = await db.collection('usageCounters').where('companyId', '==', companyId).get();
+  await Promise.all(counters.docs.map((d) => d.ref.delete()));
+  await db.collection('usageCounters').doc(companyId).delete().catch(() => {});
+  const allCounters = await db.collection('usageCounters').get().catch(() => ({ docs: [] }));
+  await Promise.all(
+    allCounters.docs
+      .filter((d) => d.id.startsWith(`ai__${companyId}__`))
+      .map((d) => d.ref.delete()),
+  );
 
   // Conversations and their message subcollections.
   const convs = await db.collection('conversations').where('companyId', '==', companyId).get();
@@ -203,9 +226,39 @@ export async function cleanupCompany(companyId) {
   await db.collection('companies').doc(companyId).delete();
 }
 
+/**
+ * Grant a fixture company an explicit internal entitlement.
+ *
+ * With deny-by-default entitlement, a company created by a test has no
+ * subscription and therefore a zero AI allowance. A suite that exercises chat or
+ * proposal creation must grant entitlement the same way the product does for a
+ * development tenant: explicitly, with `kind: 'internal'` and a bounded budget.
+ */
+export async function grantInternal(companyId, { aiMonthlyBudgetUsd = 25 } = {}) {
+  await db
+    .collection('entitlementOverrides')
+    .doc(companyId)
+    .set(
+      {
+        enabled: true,
+        kind: 'internal',
+        planId: null,
+        limits: {
+          maxUsers: null,
+          maxActiveProposals: null,
+          maxDocumentStorageMb: null,
+          aiMonthlyBudgetUsd,
+        },
+        expiresAt: null,
+        note: 'Test fixture internal entitlement',
+        updatedAt: new Date(),
+      },
+      { merge: true },
+    );
+}
+
 /** Delete the Firebase Auth users a suite created. */
-export async function cleanupUsers(emails) {
-  for (const email of emails) {
+export async function cleanupUsers(emails) {  for (const email of emails) {
     try {
       const user = await auth.getUserByEmail(email);
       await auth.deleteUser(user.uid);

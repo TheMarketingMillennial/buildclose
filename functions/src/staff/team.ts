@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { auth, db, COLLECTIONS, FieldValue, type Role } from '../lib/firebase.js';
 import { requireStaff, requireRole } from './auth.js';
 import { audit } from '../lib/audit.js';
-import { assertCanAddUser } from '../lib/guard.js';
+import { reserveUserSeat } from '../lib/guard.js';
 
 const REGION = 'us-central1';
 
@@ -70,15 +70,27 @@ export const inviteStaff = onCall({ region: REGION }, async (request) => {
       return null; // No such account: a genuinely new seat.
     }
   })();
+  let seat = null;
   if (!existingUserForSeat) {
-    await assertCanAddUser(identity.companyId, identity.uid);
+    /**
+     * RESERVE, not just check. Two admins inviting simultaneously on a plan of one
+     * spare seat would both pass a bare count check; the transactional reservation
+     * makes one of them lose deterministically.
+     */
+    seat = await reserveUserSeat(identity.companyId, identity.uid);
   }
 
   let user;
   try {
     user = await auth.getUserByEmail(email);
   } catch {
-    user = await auth.createUser({ email, displayName, emailVerified: false });
+    try {
+      user = await auth.createUser({ email, displayName, emailVerified: false });
+    } catch (err) {
+      // Account creation failed: give the seat back rather than burning it.
+      if (seat) await seat.release();
+      throw err;
+    }
   }
 
   // Refuse to move a user who already belongs to a different tenant.
@@ -86,6 +98,8 @@ export const inviteStaff = onCall({ region: REGION }, async (request) => {
   if (existing.exists) {
     const data = existing.data() as { companyId?: string };
     if (data.companyId && data.companyId !== identity.companyId) {
+      // The account exists but belongs elsewhere — the seat was never really used.
+      if (seat) await seat.release();
       throw new HttpsError('failed-precondition', 'This account belongs to another organisation');
     }
   }

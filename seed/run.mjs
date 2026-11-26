@@ -65,6 +65,76 @@ async function main() {
 
   const companyId = companyRef.id;
 
+  /**
+   * Explicit internal entitlement grant.
+   *
+   * Entitlement is deny-by-default: a company with no subscription record is
+   * `unentitled` with a zero AI allowance. That is exactly right for a real
+   * prospect record someone created by accident, but the demonstration tenant is
+   * ours, so it is preserved deliberately and audibly rather than by relying on an
+   * absence of billing data.
+   *
+   * `kind: 'internal'` is open-ended (no expiry) — it is the smallest,
+   * best-understood residency for a tenant we operate. It is NOT a price and it
+   * does not appear in the plan catalogue; the € figures a customer pays live only
+   * in Stripe. Seeding it here means a fresh emulator or a fresh Firebase project
+   * reproduces the same demonstrated behaviour as production.
+   */
+  await db
+    .collection('entitlementOverrides')
+    .doc(companyId)
+    .set(
+      {
+        enabled: true,
+        kind: 'internal',
+        planId: 'internal-dev',
+        limits: {
+          maxUsers: null,
+          maxActiveProposals: null,
+          maxDocumentStorageMb: null,
+          // Bounded, unlike a paid plan: the demo tenant must not be able to run
+          // up an unbounded model bill if someone points a load tester at it.
+          aiMonthlyBudgetUsd: 25,
+        },
+        expiresAt: null,
+        note: 'Internal demonstration tenant (Abrica). Preserved deliberately; not a customer subscription.',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+  /**
+   * The `internal-dev` plan exists so the grant has something to resolve against
+   * and so `grantKind` is visible in the dashboard. Its limits mirror the grant.
+   */
+  await db
+    .collection('plans')
+    .doc('internal-dev')
+    .set(
+      {
+        id: 'internal-dev',
+        name: 'Internal (not sellable)',
+        description: 'Internal entitlement plan for operated tenants. Never offered for sale.',
+        sellable: false,
+        currency: 'USD',
+        stripePriceIds: [],
+        limits: {
+          maxUsers: null,
+          maxActiveProposals: null,
+          maxDocumentStorageMb: null,
+          aiMonthlyBudgetUsd: 25,
+        },
+        features: {
+          documentIntelligence: true,
+          proposalAcceptance: true,
+          customBranding: true,
+        },
+        active: true,
+        createdAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
   // --------------------------------------------------------------- proposal
   const proposalRef = db.collection('proposals').doc('abrica-stage-one');
   const proposalTerms = {

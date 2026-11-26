@@ -226,11 +226,63 @@ sent a redacted document, so the floor is never disclosed),
 
 **Team** — `inviteStaff`, `setStaffRole`, `listStaff`, `bootstrapCompany`
 
-**Billing** — `createCheckoutSession`, `stripeWebhook` (test mode)
+**Billing** — `createCheckoutSession`, `stripeWebhook` (test mode),
+`listPlans`, `getCompanyEntitlements`, `createPlan`, `updatePlan`,
+`setEntitlementOverride`, `clearEntitlementOverride`
 
-**Retention** — `retentionPurge` (scheduled daily 03:00 UTC), `runRetentionPurge`
-(staff callable twin, for on-request deletions and for the emulator, which cannot
-invoke Cloud Scheduler)
+---
+
+## Entitlements — deny by default
+
+A company is **not** entitled to anything merely because a subscription record is
+absent. `subscriptions`, `entitlementOverrides` and `plans` are resolved through
+one chokepoint (`lib/entitlementStore.ts`) into one of six states:
+
+| State | Meaning | Seats / proposals / storage | AI budget |
+| --- | --- | --- | --- |
+| `unentitled` | no subscription, no grant | 0 | 0 — zero model calls |
+| `granted` | explicit `internal` or `pilot` grant | from grant/plan | from grant, bounded |
+| `active` | paid subscription | plan limits | plan cap |
+| `trialing` | Stripe trial | plan limits | plan cap |
+| `grace` | payment failed, period not yet ended | plan limits | plan cap |
+| `restricted` | lapsed / cancelled / expired pilot | 0 | `LAPSED_AI_ALLOWANCE_USD = 2` |
+
+Two rules matter and are both enforced in code, not documentation:
+
+1. **Abrica and development tenants are preserved by explicit grant.**
+   `seed/run.mjs` writes `entitlementOverrides/abrica-demo` with
+   `kind: 'internal'` and an `internal-dev` plan. `internal` grants may be
+   open-ended; `pilot` grants are schema-refused without `expiresAt`. Both are
+   audited (`entitlement.override_set`).
+2. **Proposal access is never billing-gated.** `proposalAccessPreserved()` returns
+   `true` unconditionally: a prospect with a valid access token can open and
+   discuss a published proposal whatever the tenant's billing state. Public
+   demonstration prospects therefore need no subscription.
+3. **Expired accounts get a little AI, not none and not unlimited.**
+   `LAPSED_AI_ALLOWANCE_USD = 2` is an operational safety floor, *not* a price;
+   it is additionally capped by `min(planCap, 2)` so a lapsed enterprise plan
+   cannot retain its large allowance.
+
+**No hardcoded final pricing.** Plan prices exist only as Stripe price IDs; a unit
+test asserts a plan carries no monetary field. `LAPSED_AI_ALLOWANCE_USD` is a
+spend ceiling, not a charge.
+
+### Concurrency
+
+Limit checks are not count-then-write. Twenty simultaneous requests would each
+read "0 of 1 used" and all pass. A transaction that re-counts does **not** fix
+this: Firestore locks documents a query returns, and a query matching nothing
+locks nothing, so phantom inserts slip through. `lib/usage.ts` therefore keeps a
+**single counter document** per company (`usageCounters/{companyId}` for seats and
+proposals, `usageCounters/ai__{companyId}__{YYYY-MM}` for AI spend). Every writer
+reads and writes the same document, so concurrent writers conflict and one
+retries.
+
+The AI budget **reserves the worst case** (estimated prompt + the model call's
+`max_tokens`) before calling the provider, then **commits the actual token cost**
+and returns the remainder; a provider failure **releases** the whole reservation.
+Without the release, a wave of provider errors would silently consume a paying
+tenant's monthly allowance.
 
 ---
 

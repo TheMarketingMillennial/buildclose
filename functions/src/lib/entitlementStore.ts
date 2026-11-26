@@ -136,23 +136,26 @@ export async function resolveCompanyEntitlements(
       };
     }
 
-    // ---- pilot override ----
+    // ---- administrative grant ----
     let override = null as PilotOverride | null;
     if (overrideSnap.exists) {
       const d = overrideSnap.data() as Record<string, unknown>;
       const parsed = PilotOverride.safeParse({
         enabled: d.enabled === true,
+        // Absent kind defaults to 'pilot', the stricter of the two: an internal
+        // grant that lost its kind must not silently become exempt from expiry.
+        kind: d.kind === 'internal' ? 'internal' : 'pilot',
         planId: typeof d.planId === 'string' ? d.planId : null,
         limits: d.limits ?? undefined,
         features: d.features ?? undefined,
-        // A Firestore timestamp cannot satisfy the Zod date refinement unless it
-        // is converted first; this is why the conversion happens here and not in
-        // the pure module.
+        // A Firestore timestamp cannot satisfy the Zod date refinement until it is
+        // converted, which is why the conversion happens here and not in the pure
+        // module.
         expiresAt: asDate(d.expiresAt),
         note: typeof d.note === 'string' ? d.note : '',
       });
-      // A malformed override is IGNORED, not applied partially: an override that
-      // grants some limits and silently drops others is worse than none.
+      // A malformed grant is IGNORED, not applied partially: one that grants some
+      // limits and silently drops others is worse than none.
       if (parsed.success) override = parsed.data;
     }
 

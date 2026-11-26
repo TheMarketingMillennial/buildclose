@@ -6,18 +6,25 @@
  *
  * What is proven here, in order of how badly it would hurt to get wrong:
  *
- *   1. A tenant with NO subscription stays fully entitled (grandfathered). This is
- *      the rule that keeps the 113-test verified baseline alive; if it were wrong,
- *      every existing customer would have lost the ability to create proposals the
- *      day billing landed.
- *   2. A pilot override beats a lapsed subscription, but only until it expires.
- *      An override that can outlive its expiry date is a free plan forever.
- *   3. Grace is measured from the end of the unpaid period, and clamps to zero.
- *   4. A lapsed subscription blocks growth WITHOUT severing a live prospect
- *      conversation.
- *   5. The AI ceiling is the TIGHTER of plan and company setting — a company can
+ *   1. DENY BY DEFAULT. A tenant with no subscription and no grant is `unentitled`:
+ *      no seats, no proposals, no storage, and ZERO AI allowance. The absence of a
+ *      billing record must never be read as permission — that was a real defect in
+ *      the first draft, where any company record at all could run proposals and
+ *      burn model spend without ever being sold anything.
+ *   2. An explicit internal grant restores access for tenants that legitimately
+ *      predate billing (Abrica, the development tenants). Note it does NOT grant
+ *      unlimited AI: it removes the PLAN cap so the company's own finite setting
+ *      governs.
+ *   3. A pilot grant beats a lapsed subscription, but only until it expires. A
+ *      pilot that outlives its expiry date is a free plan forever.
+ *   4. Grace is measured from the end of the unpaid period, and clamps to zero.
+ *   5. A lapsed subscription blocks growth WITHOUT severing a live prospect
+ *      conversation, and is capped at LAPSED_AI_ALLOWANCE_USD — a little, not none
+ *      and not unlimited.
+ *   6. The AI ceiling is the TIGHTER of plan and company setting — a company can
  *      never raise itself above the plan it bought.
- *   6. No monetary amount is stored on a plan. Stripe owns every price.
+ *   7. Existing proposal access is preserved regardless of billing state.
+ *   8. No monetary amount is stored on a plan. Stripe owns every price.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,6 +43,8 @@ import {
   sellablePlan,
   sortPlans,
   describeEntitlements,
+  proposalAccessPreserved,
+  LAPSED_AI_ALLOWANCE_USD,
 } from '../functions/lib/lib/entitlements.js';
 
 // ---------------------------------------------------------------------- setup
@@ -95,34 +104,86 @@ function resolve(overrides = {}) {
   });
 }
 
-// ------------------------------------------------- no subscription: grandfather
+// ------------------------------------------------ deny by default (no billing)
 
-test('a company with no subscription record stays fully entitled', () => {
+test('a company with NO subscription and NO grant is denied everything', () => {
   const ent = resolve();
 
-  assert.equal(ent.state, 'unsubscribed');
-  assert.equal(ent.grandfathered, true);
+  assert.equal(ent.state, 'unentitled');
+  assert.equal(ent.needsPlan, true, 'the dashboard must prompt for a plan');
+  assert.equal(ent.canGrow, false);
+  assert.equal(ent.limits.maxUsers, 0);
+  assert.equal(ent.limits.maxActiveProposals, 0);
+  assert.equal(ent.limits.maxDocumentStorageMb, 0);
+  assert.equal(ent.limits.aiMonthlyBudgetUsd, 0, 'no model spend at all');
+  assert.deepEqual(ent.reasons, ['no_entitlement_granted']);
+});
+
+test('an absent subscription is never read as permission', () => {
+  const ent = resolve();
+
+  assert.equal(checkCanAddUser(ent, 0).allowed, false);
+  assert.equal(checkCanCreateProposal(ent, 0).allowed, false);
+  assert.equal(checkCanStoreDocuments(ent, 0, 1).allowed, false);
+  assert.equal(checkCanAddUser(ent, 0).code, 'no_entitlement');
+});
+
+test('an unentitled company cannot spend a single cent of AI budget', () => {
+  const ent = resolve();
+  assert.equal(effectiveAiBudgetUsd(ent, 25), 0, 'a large company setting cannot unlock spend');
+  assert.equal(effectiveAiBudgetUsd(ent, null), 0);
+  assert.equal(checkAiBudget(ent, 0, 25).allowed, false, 'zero spent still exceeds a zero cap');
+  assert.equal(checkAiBudget(ent, 0, 25).code, 'no_entitlement');
+});
+
+// ------------------------------------------------------- internal grants
+
+test('an internal grant restores access for a tenant that predates billing', () => {
+  const ent = resolve({
+    override: PilotOverride.parse({ enabled: true, kind: 'internal', expiresAt: null }),
+  });
+
+  assert.equal(ent.state, 'granted');
+  assert.equal(ent.grantKind, 'internal');
+  assert.equal(ent.needsPlan, false);
   assert.equal(ent.canGrow, true);
-  assert.equal(ent.limits.maxUsers, null, 'unlimited seats');
-  assert.equal(ent.limits.maxActiveProposals, null, 'unlimited proposals');
-  assert.equal(ent.limits.maxDocumentStorageMb, null, 'unlimited storage');
-  assert.deepEqual(ent.reasons, ['no_subscription_on_record']);
+  assert.equal(ent.limits.maxUsers, null, 'uncapped seats');
+  assert.equal(ent.limits.maxActiveProposals, null, 'uncapped proposals');
+  assert.deepEqual(ent.reasons, ['internal_grant_active']);
 });
 
-test('a grandfathered company is never blocked from growing', () => {
-  const ent = resolve();
-  assert.equal(checkCanAddUser(ent, 500).allowed, true);
-  assert.equal(checkCanCreateProposal(ent, 5000).allowed, true);
-  assert.equal(checkCanStoreDocuments(ent, 50_000, 1000).allowed, true);
-});
+test('an internal grant does NOT grant unlimited AI spend', () => {
+  const ent = resolve({
+    override: PilotOverride.parse({ enabled: true, kind: 'internal', expiresAt: null }),
+  });
 
-test('a grandfathered company still honours its own configured AI budget', () => {
-  const ent = resolve();
-  // Plan imposes no cap; the company's own setting is what binds.
+  // The grant removes the PLAN cap (null), so the company's own finite setting
+  // governs. It is not "unlimited"; it is "not bounded by a plan we never sold".
+  assert.equal(ent.limits.aiMonthlyBudgetUsd, null);
   assert.equal(effectiveAiBudgetUsd(ent, 25), 25);
-  assert.equal(effectiveAiBudgetUsd(ent, null), null, 'unset means uncapped, as before');
   assert.equal(checkAiBudget(ent, 24_000_000, 25).allowed, true);
   assert.equal(checkAiBudget(ent, 25_000_000, 25).allowed, false);
+});
+
+test('an internal grant may be open-ended and still applies', () => {
+  const ent = resolve({
+    override: PilotOverride.parse({ enabled: true, kind: 'internal', expiresAt: null }),
+  });
+  assert.equal(ent.endsAt, null, 'no expiry for an internal tenant');
+  assert.equal(ent.state, 'granted');
+});
+
+test('a pilot grant still REQUIRES an expiry, internal does not', () => {
+  assert.equal(
+    PilotOverride.safeParse({ enabled: true, kind: 'pilot', expiresAt: null }).success,
+    false,
+    'a time-boxed pilot without an end date must not be storable',
+  );
+  assert.equal(
+    PilotOverride.safeParse({ enabled: true, kind: 'internal', expiresAt: null }).success,
+    true,
+    'an internal tenant is outside billing by decision, not on a clock',
+  );
 });
 
 // ----------------------------------------------------------- pilot overrides
@@ -136,12 +197,13 @@ test('an active pilot override grants its plan and beats a lapsed subscription',
     overridePlan: plan(),
   });
 
-  assert.equal(ent.state, 'pilot');
+  assert.equal(ent.state, 'granted');
+  assert.equal(ent.grantKind, 'pilot');
   assert.equal(ent.canGrow, true);
   assert.equal(ent.planId, 'growth');
   assert.equal(ent.limits.maxUsers, 5);
   assert.equal(ent.endsAt, days(14).toISOString());
-  assert.deepEqual(ent.reasons, ['pilot_override_active']);
+  assert.deepEqual(ent.reasons, ['pilot_grant_active']);
 });
 
 test('an EXPIRED pilot override is ignored at read time, not just hidden in the UI', () => {
@@ -150,9 +212,9 @@ test('an EXPIRED pilot override is ignored at read time, not just hidden in the 
     override: PilotOverride.parse({ enabled: true, expiresAt: days(-1) }),
   });
 
-  // Falls through to the no-subscription branch, not to pilot.
-  assert.equal(ent.state, 'unsubscribed');
-  assert.deepEqual(ent.reasons, ['no_subscription_on_record']);
+  // Falls through to the no-subscription branch, i.e. denied — not to granted.
+  assert.equal(ent.state, 'unentitled');
+  assert.deepEqual(ent.reasons, ['no_entitlement_granted']);
 });
 
 test('an expired pilot override lets a lapsed subscription restrict the tenant', () => {
@@ -183,7 +245,7 @@ test('a pilot override may grant limits without naming a plan', () => {
     }),
   });
 
-  assert.equal(ent.state, 'pilot');
+  assert.equal(ent.state, 'granted');
   assert.equal(ent.planName, 'Pilot');
   assert.equal(ent.limits.maxUsers, 2);
   assert.equal(ent.limits.maxActiveProposals, 3);
@@ -205,9 +267,9 @@ test('partial pilot limits do not blank the limits inherited from the granted pl
   assert.equal(ent.limits.maxDocumentStorageMb, 200, 'and so does storage');
 });
 
-test('a disabled pilot override changes nothing', () => {
+test('a disabled grant changes nothing', () => {
   const ent = resolve({ override: PilotOverride.parse({ enabled: false, expiresAt: days(30) }) });
-  assert.equal(ent.state, 'unsubscribed');
+  assert.equal(ent.state, 'unentitled');
 });
 
 // ---------------------------------------------------------------- paid states
@@ -217,7 +279,7 @@ test('an active subscription with a future period is active', () => {
 
   assert.equal(ent.state, 'active');
   assert.equal(ent.canGrow, true);
-  assert.equal(ent.grandfathered, false);
+  assert.equal(ent.needsPlan, false);
   assert.equal(ent.planName, 'Growth');
   assert.equal(ent.limits.maxUsers, 5);
 });
@@ -360,17 +422,17 @@ test('a restricted tenant cannot grow', () => {
 });
 
 test('a restricted tenant does NOT have live prospect conversations severed', () => {
-  // The plan capped AI at $30; the lapsed account inherits that cap so a live
-  // conversation keeps working, unlike a zeroed growth limit.
-  const capped = resolve({
+  const lapsed = resolve({
     subscription: sub({ status: 'canceled', currentPeriodEnd: days(-5) }),
-    plan: plan(),
+    plan: plan(), // plan cap $30
   });
-  assert.equal(capped.limits.aiMonthlyBudgetUsd, 30);
-  assert.equal(checkAiBudget(capped, 5_000_000, 25).allowed, true, 'well inside the cap');
 
-  // Existing entitlements are preserved even with no AI cost yet.
-  assert.equal(checkAiBudget(capped, 0, null).allowed, true);
+  // Not zero: a prospect mid-negotiation keeps getting answers.
+  assert.equal(lapsed.limits.aiMonthlyBudgetUsd, LAPSED_AI_ALLOWANCE_USD);
+  assert.equal(checkAiBudget(lapsed, 0, 25).allowed, true, 'the floor leaves real headroom');
+  // Not unlimited: the company's own large setting cannot reopen the tap.
+  assert.equal(checkAiBudget(lapsed, 1_500_000, 10_000).allowed, true);
+  assert.equal(checkAiBudget(lapsed, 2_000_000, 10_000).allowed, false, 'hard ceiling at the floor');
 });
 
 // ------------------------------------------------------------- plan resolution
@@ -503,6 +565,42 @@ test('unlimited plan + unset company means uncapped', () => {
 
 // ----------------------------------------------------------- no prices stored
 
+test('existing proposal access is preserved in every billing state', () => {
+  // A proposal already sent to a prospect is a live commercial document. The
+  // seller's billing position must never retract it.
+  for (const ent of [
+    resolve(), // unentitled
+    resolve({ override: PilotOverride.parse({ enabled: true, kind: 'internal', expiresAt: null }) }),
+    resolve({ subscription: sub(), plan: plan() }), // active
+    resolve({ subscription: sub({ status: 'canceled', currentPeriodEnd: days(-9) }), plan: plan() }), // restricted
+  ]) {
+    assert.equal(proposalAccessPreserved(ent), true, `access must survive state ${ent.state}`);
+  }
+});
+
+test('a lapsed account gets a little AI, not none and not unlimited', () => {
+  const ent = resolve({
+    subscription: sub({ status: 'canceled', currentPeriodEnd: days(-5) }),
+    plan: plan(), // plan cap $30
+  });
+
+  assert.equal(ent.state, 'restricted');
+  assert.equal(ent.limits.aiMonthlyBudgetUsd, LAPSED_AI_ALLOWANCE_USD, 'capped at the lapsed floor');
+  assert.ok(LAPSED_AI_ALLOWANCE_USD > 0, 'not zero: a live negotiation keeps answering');
+  assert.ok(LAPSED_AI_ALLOWANCE_USD < 30, 'not unlimited: an expired account is not an API key');
+  assert.equal(checkAiBudget(ent, 0, 1000).allowed, true, 'a little headroom remains');
+  assert.equal(checkAiBudget(ent, 2_000_000, 1000).allowed, false, 'and it is a hard ceiling');
+});
+
+test('a lapsed enterprise plan does not keep its large AI allowance', () => {
+  const ent = resolve({
+    subscription: sub({ status: 'canceled', currentPeriodEnd: days(-5) }),
+    plan: plan({ limits: { maxUsers: 50, maxActiveProposals: 500, maxDocumentStorageMb: 5000, aiMonthlyBudgetUsd: 500 } }),
+  });
+  // Tighter of the plan cap and the lapsed floor.
+  assert.equal(ent.limits.aiMonthlyBudgetUsd, LAPSED_AI_ALLOWANCE_USD);
+});
+
 test('a plan stores no monetary amount — Stripe owns every price', () => {
   const p = plan();
 
@@ -524,8 +622,8 @@ test('a plan id must be a lowercase slug', () => {
 // --------------------------------------------------------------- describing
 
 test('describeEntitlements produces a terse status for each state', () => {
-  const grandfathered = resolve();
-  assert.equal(describeEntitlements(grandfathered), 'No plan');
+  const denied = resolve();
+  assert.equal(describeEntitlements(denied), 'No plan — access not granted');
 
   const active = resolve({ subscription: sub(), plan: plan() });
   assert.equal(describeEntitlements(active), 'Growth');

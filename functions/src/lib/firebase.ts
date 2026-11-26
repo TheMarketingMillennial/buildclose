@@ -68,6 +68,15 @@ export const COLLECTIONS = {
    * overwrite a grant (or a grant mask a real payment failure).
    */
   entitlementOverrides: 'entitlementOverrides',
+  /**
+   * Per-company usage counters, maintained transactionally.
+   *
+   * These exist because a count-then-write guard is racy: five parallel
+   * createProposal calls each read "0 active proposals" against a limit of 1 and
+   * all five succeed. The counter is the authority for limit decisions, and the
+   * source collections are only ever used to seed or reconcile it.
+   */
+  usageCounters: 'usageCounters',
 } as const;
 
 export type Role = 'platform_admin' | 'company_admin' | 'sales_manager' | 'sales_rep';

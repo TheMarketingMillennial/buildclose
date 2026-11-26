@@ -29,7 +29,8 @@ import { buildSystemPrompt, buildUserTurn } from '../lib/prompt.js';
 import { validateCommercial, looksLikeInjection, safeFallbackReply } from '../lib/commercial.js';
 import { computeCost } from '../lib/pricing.js';
 import { resolveCompanyEntitlements } from '../lib/entitlementStore.js';
-import { checkAiBudget, effectiveAiBudgetUsd } from '../lib/entitlements.js';
+import { effectiveAiBudgetUsd } from '../lib/entitlements.js';
+import { reserveAiBudget } from '../lib/usage.js';
 import { resolveProspectContext, resolveCta } from '../lib/context.js';
 import {
   ensureConversation,
@@ -110,18 +111,23 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
     });
   }
 
-  // ---- 4. budget check ----
+  // ---- 4. budget reservation ----
   /**
    * The allowance is the TIGHTER of the company's own setting and whatever the
    * tenant's plan includes — the same "tighter of two" rule as commercial
    * authority, applied to spend.
    *
-   * Why this replaced reading `companyData.aiBudgetUsd` alone: that field is
-   * writable by the tenant, so a company on a plan including $30 could have set
-   * it to $10,000 and spent against the platform's margin. The plan cap now
-   * bounds it. A grandfathered tenant (no subscription) resolves to a `null` plan
-   * cap, so `effectiveAiBudgetUsd` returns their own setting unchanged — which is
-   * exactly the pre-billing behaviour, and why the 113-test baseline holds.
+   * Why this does not read `companyData.aiBudgetUsd` alone: that field is writable
+   * by the tenant, so a company on a plan including $30 could have set it to
+   * $10,000 and spent against the platform's margin. The plan cap now bounds it,
+   * and an account with no entitlement resolves to a zero cap and cannot spend at
+   * all.
+   *
+   * CONCURRENCY: this RESERVES the worst-case cost of the call rather than merely
+   * checking what has been spent. Twenty simultaneous prospect messages would
+   * otherwise each read the same "spent so far", each conclude there was room, and
+   * all twenty would spend. Reserving first means each message must own budget it
+   * might use; the unused remainder is returned when the actual cost is known.
    */
   const companySnap = await db.collection(COLLECTIONS.companies).doc(ctx.companyId).get();
   const companyData = companySnap.data() as { aiBudgetUsd?: number } | undefined;
@@ -131,31 +137,60 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
   const effectiveBudgetUsd = effectiveAiBudgetUsd(ent, companyBudgetUsd);
 
   const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM
+
+  // Baseline only matters the first time the counter is initialised for this
+  // month; afterwards the counter is authoritative.
   const usageSnap = await db
     .collection(COLLECTIONS.aiUsage)
     .where('companyId', '==', ctx.companyId)
     .where('monthKey', '==', monthKey)
     .limit(500)
     .get();
-  const spentMicro = usageSnap.docs.reduce((sum, d) => sum + Number((d.data() as { costMicroUsd?: number }).costMicroUsd ?? 0), 0);
+  const baselineMicro = usageSnap.docs.reduce(
+    (sum, d) => sum + Number((d.data() as { costMicroUsd?: number }).costMicroUsd ?? 0),
+    0,
+  );
 
-  const budgetDecision = checkAiBudget(ent, spentMicro, companyBudgetUsd);
-  if (!budgetDecision.allowed) {
+  const history = await recentHistory(conversationId, 8);
+  const systemPrompt = buildSystemPrompt({ facts: ctx.facts, agent: ctx.agent, authority: ctx.authority });
+  const userTurn = buildUserTurn(userMessage, history);
+
+  /**
+   * Worst-case reservation, sized from the prompt actually being sent.
+   *
+   * ~4 characters per token is the standard approximation. The output bound is the
+   * model call's own `max_tokens` (700), so the reservation cannot be exceeded by
+   * a long completion. Over-reserving only causes a brief, self-correcting
+   * refusal near the ceiling; under-reserving would let a burst overrun the budget.
+   */
+  const estimatedPromptTokens = Math.ceil((systemPrompt.length + userTurn.length) / 4);
+  const reservation = computeCost(cfg.openaiModel, estimatedPromptTokens, 700);
+
+  const aiReservation = await reserveAiBudget(
+    ctx.companyId,
+    monthKey,
+    effectiveBudgetUsd,
+    reservation.costMicroUsd,
+    baselineMicro,
+  );
+
+  if (!aiReservation.outcome.allowed) {
     await audit({
       companyId: ctx.companyId,
       action: 'budget.exceeded',
       actorType: 'system',
       proposalId: ctx.proposalId,
-      detail: { monthKey, budgetUsd: effectiveBudgetUsd, planState: ent.state, source: budgetDecision.code },
+      detail: {
+        monthKey,
+        budgetUsd: effectiveBudgetUsd,
+        planState: ent.state,
+        committedMicro: aiReservation.outcome.committedMicro,
+      },
     });
     throw new AppError(503, 'budget_exceeded', 'AI budget exhausted for this month');
   }
 
-  // ---- 5. build prompt and call the model ----
-  const history = await recentHistory(conversationId, 8);
-  const systemPrompt = buildSystemPrompt({ facts: ctx.facts, agent: ctx.agent, authority: ctx.authority });
-  const userTurn = buildUserTurn(userMessage, history);
-
+  // ---- 5. call the model (prompt was built in step 4) ----
   let aiReply: AiReply;
   let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
   let latencyMs = 0;
@@ -170,6 +205,10 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
     aiFailed = true;
     const kind = err instanceof AiError ? err.kind : 'transport';
     console.error('[chat] AI failure', { kind, message: (err as Error).message });
+    // The call produced nothing billable, so give the whole reservation back.
+    // Without this a wave of provider failures would silently consume the
+    // tenant's monthly allowance and eventually lock out a paying customer.
+    await aiReservation.reservation.release();
     await recordEvent({
       companyId: ctx.companyId,
       proposalId: ctx.proposalId,
@@ -238,7 +277,17 @@ export async function chatHandler(req: Request, res: Response): Promise<void> {
   }
 
   // ---- 7. meter usage whether or not the reply survived validation ----
+  /**
+   * Settling the reservation is part of metering, not an afterthought.
+   *
+   * The reservation charged the worst case before the call; this charges what the
+   * tokens actually cost and returns the difference. It runs even when the reply
+   * was replaced by the safety fallback, because the provider still billed for the
+   * generation. Failing to settle would permanently hold budget that was never
+   * spent, so a tenant would be refused service while `aiUsage` showed headroom.
+   */
   const cost = computeCost(cfg.openaiModel, usage.promptTokens, usage.completionTokens);
+  await aiReservation.reservation.commit(cost.costMicroUsd);
   try {
     await db.collection(COLLECTIONS.aiUsage).add({
       companyId: ctx.companyId,

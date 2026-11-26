@@ -89,7 +89,9 @@ export const getCompanyEntitlements = onCall({ region: REGION }, async (request)
     limits: ent.limits,
     features: ent.features,
     canGrow: ent.canGrow,
-    grandfathered: ent.grandfathered,
+    /** True when nothing has been granted — the dashboard must prompt for a plan. */
+    needsPlan: ent.needsPlan,
+    grantKind: ent.grantKind,
     graceDaysRemaining: ent.graceDaysRemaining,
     endsAt: ent.endsAt,
     cancelAtPeriodEnd: ent.cancelAtPeriodEnd,
@@ -225,12 +227,18 @@ export const updatePlan = onCall({ region: REGION }, async (request) => {
 // ------------------------------------------------------------ pilot overrides
 
 /**
- * Grant or replace a pilot override for one company.
+ * Grant or replace an administrative entitlement for one company.
  *
- * `expiresAt` is REQUIRED by the schema when `enabled` is true, so an operator
- * cannot create an open-ended grant. The date is stored as a Firestore Timestamp
- * and re-checked at read time by the resolver, so an expired grant stops working
- * even if nobody remembers to clear it.
+ * Two kinds:
+ *   'pilot'    — a time-boxed trial. `expiresAt` is REQUIRED by the schema.
+ *   'internal' — our own and pre-billing tenants (Abrica, dev tenants). May be
+ *                open-ended, because these accounts are outside billing by
+ *                decision, not by trial.
+ *
+ * This is now the ONLY way an account without a subscription gets access. The
+ * earlier draft granted unlimited access whenever no subscription record existed,
+ * which meant any company record whatsoever could run proposals and spend AI
+ * budget. Access is now an explicit, audited act.
  */
 export const setEntitlementOverride = onCall({ region: REGION }, async (request) => {
   const identity = requirePlatformAdmin(request);
@@ -238,6 +246,7 @@ export const setEntitlementOverride = onCall({ region: REGION }, async (request)
   const parsed = z
     .object({
       companyId: z.string().min(1).max(200),
+      kind: z.enum(['internal', 'pilot']).default('pilot'),
       planId: z.string().max(60).nullable().optional(),
       limits: z
         .object({
@@ -255,32 +264,40 @@ export const setEntitlementOverride = onCall({ region: REGION }, async (request)
           advancedAnalytics: z.boolean().optional(),
         })
         .optional(),
-      expiresAt: z.string().datetime({ offset: true }).or(z.string().min(8)),
+      /** Optional for 'internal', required for 'pilot'. */
+      expiresAt: z.string().min(8).nullable().optional(),
       note: z.string().max(1000).optional(),
     })
     .safeParse(request.data);
 
   if (!parsed.success) {
-    throw new HttpsError('invalid-argument', parsed.error.issues[0]?.message ?? 'Invalid override');
+    throw new HttpsError('invalid-argument', parsed.error.issues[0]?.message ?? 'Invalid grant');
   }
 
   const companySnap = await db.collection(COLLECTIONS.companies).doc(parsed.data.companyId).get();
   if (!companySnap.exists) throw new HttpsError('not-found', 'Company not found');
 
-  const expiresAt = new Date(parsed.data.expiresAt);
-  if (Number.isNaN(expiresAt.getTime())) {
-    throw new HttpsError('invalid-argument', 'Expiry must be a valid date');
+  let expiresAt: Date | null = null;
+  if (parsed.data.expiresAt) {
+    expiresAt = new Date(parsed.data.expiresAt);
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new HttpsError('invalid-argument', 'Expiry must be a valid date');
+    }
+    if (expiresAt.getTime() <= Date.now()) {
+      // An already-expired grant is a no-op that would leave the dashboard showing
+      // "Pilot" while granting nothing. Refuse it so the operator notices.
+      throw new HttpsError('invalid-argument', 'Expiry must be in the future');
+    }
   }
-  if (expiresAt.getTime() <= Date.now()) {
-    // An already-expired grant is a no-op that would silently grant nothing while
-    // the dashboard shows "Pilot". Refuse it so the operator notices.
-    throw new HttpsError('invalid-argument', 'Expiry must be in the future');
+  if (parsed.data.kind === 'pilot' && !expiresAt) {
+    throw new HttpsError('invalid-argument', 'A pilot grant must have an expiry date');
   }
 
-  // Validate the whole override through the same schema the resolver uses, so a
-  // grant that passes here cannot fail to apply later.
+  // Validate through the same schema the resolver uses, so a grant that passes
+  // here cannot fail to apply later.
   const candidate = PilotOverride.safeParse({
     enabled: true,
+    kind: parsed.data.kind,
     planId: parsed.data.planId ?? null,
     limits: parsed.data.limits,
     features: parsed.data.features,
@@ -288,7 +305,7 @@ export const setEntitlementOverride = onCall({ region: REGION }, async (request)
     note: parsed.data.note ?? '',
   });
   if (!candidate.success) {
-    throw new HttpsError('invalid-argument', candidate.error.issues[0]?.message ?? 'Invalid override');
+    throw new HttpsError('invalid-argument', candidate.error.issues[0]?.message ?? 'Invalid grant');
   }
 
   await db
@@ -298,6 +315,7 @@ export const setEntitlementOverride = onCall({ region: REGION }, async (request)
       {
         companyId: parsed.data.companyId,
         enabled: true,
+        kind: candidate.data.kind,
         planId: candidate.data.planId,
         limits: candidate.data.limits ?? {},
         features: candidate.data.features ?? {},
@@ -315,14 +333,15 @@ export const setEntitlementOverride = onCall({ region: REGION }, async (request)
     actorType: 'system',
     actorId: identity.uid,
     detail: {
+      kind: candidate.data.kind,
       planId: candidate.data.planId,
       limits: candidate.data.limits ?? {},
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: expiresAt ? expiresAt.toISOString() : 'open-ended',
       note: candidate.data.note,
     },
   });
 
-  return { ok: true, expiresAt: expiresAt.toISOString() };
+  return { ok: true, kind: candidate.data.kind, expiresAt: expiresAt ? expiresAt.toISOString() : null };
 });
 
 /** Remove a pilot override, returning the company to its subscription state. */

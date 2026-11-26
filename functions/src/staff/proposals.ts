@@ -22,7 +22,7 @@ import { mintProposalToken } from '../lib/tokens.js';
 import { hashProposalDocument } from '../lib/context.js';
 import { audit } from '../lib/audit.js';
 import { getConfig } from '../lib/config.js';
-import { assertCanCreateProposal } from '../lib/guard.js';
+import { reserveProposalSlot, releaseProposalSlotFor } from '../lib/guard.js';
 
 const REGION = 'us-central1';
 
@@ -65,8 +65,12 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
    * "permission denied", not "you are out of proposals" — otherwise a lapsed
    * tenant's rep is told the wrong reason and files a support ticket about the
    * wrong thing. Role first (who you are), then entitlement (what you bought).
+   *
+   * The slot is RESERVED transactionally rather than merely checked, so parallel
+   * calls cannot all pass the same count check. If the write below fails, the
+   * reservation is released so the slot is not leaked.
    */
-  await assertCanCreateProposal(identity.companyId, identity.uid);
+  const slot = await reserveProposalSlot(identity.companyId, identity.uid);
 
   const ref = db.collection(COLLECTIONS.proposals).doc();
   const now = FieldValue.serverTimestamp();
@@ -120,7 +124,6 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
 
   const batch = db.batch();
   batch.set(ref, record);
-
   // Defaults: agent config must exist so the prospect chat always has something
   // valid to load; internal record defaults to "no discount authority".
   batch.set(db.collection(COLLECTIONS.agentConfigs).doc(ref.id), AgentConfigInput.parse(agentSeed));
@@ -145,7 +148,19 @@ export const createProposal = onCall({ region: REGION }, async (request) => {
         companyId: identity.companyId,
       },
     );
-  await batch.commit();
+
+  try {
+    await batch.commit();
+  } catch (err) {
+    /**
+     * The slot was reserved BEFORE this write, so a failed write must hand it back.
+     * Without this, one transient Firestore error permanently consumes a unit of
+     * the tenant's plan, and the only symptom is "you are out of proposals" on an
+     * account that visibly has none — impossible to diagnose from the dashboard.
+     */
+    await slot.release();
+    throw err;
+  }
 
   await audit({
     companyId: identity.companyId,
@@ -522,9 +537,10 @@ export const duplicateProposal = onCall({ region: REGION }, async (request) => {
    *
    * Without this, the active-proposal limit was bypassable with one call: hit the
    * limit, duplicate an existing proposal, repeat. The check has to live here as
-   * well as in createProposal precisely because they are separate write paths.
+   * well as in createProposal precisely because they are separate write paths — and
+   * it must RESERVE, not merely check, or two parallel duplicates both pass.
    */
-  await assertCanCreateProposal(identity.companyId, identity.uid);
+  const slot = await reserveProposalSlot(identity.companyId, identity.uid);
 
   const [agentSnap, internalSnap] = await Promise.all([
     db.collection(COLLECTIONS.agentConfigs).doc(parsed.data.id).get(),
@@ -556,7 +572,13 @@ export const duplicateProposal = onCall({ region: REGION }, async (request) => {
       companyId: identity.companyId,
     });
   }
-  await batch.commit();
+  try {
+    await batch.commit();
+  } catch (err) {
+    // Hand the reserved slot back: a failed duplicate must not consume plan capacity.
+    await slot.release();
+    throw err;
+  }
 
   await audit({
     companyId: identity.companyId,

@@ -1,5 +1,5 @@
 /**
- * Subscription entitlements — plans, lifecycle, grace periods, pilot overrides.
+ * Subscription entitlements — plans, lifecycle, grace periods, explicit grants.
  *
  * Kept dependency-free (no Firebase, no config) for the same reason as
  * `company.ts` and `document.ts`: the enforcement points span several Cloud
@@ -8,41 +8,39 @@
  * into here; nothing re-implements a limit inline.
  *
  * ---------------------------------------------------------------------------
- * NO PRICING LIVES IN THIS FILE. NOT ONE NUMBER.
+ * DENY BY DEFAULT.
  *
- * A plan carries limits and feature flags, plus the Stripe price ids it can be
- * purchased through. It never carries an amount, because the moment an amount
- * exists in our code there are two sources of truth for what a customer pays and
- * the database one will eventually disagree with the charged one. Stripe owns
- * every monetary value; a plan is only ever *identified* here by its price ids.
- * `priceNote` exists purely so an admin can type "Contact sales" or "From $X"
- * into the dashboard for display, and is documented below as non-authoritative:
- * it is never parsed, never summed and never used to enforce anything.
+ * A company with no subscription and no explicit grant is `unentitled`: no seats,
+ * no new proposals, no document storage, and — importantly — no model spend. The
+ * absence of a subscription record is NEVER read as permission. This was corrected
+ * after a first draft treated "no subscription" as "grandfathered, unlimited",
+ * which would have meant a company record created by any means at all could run
+ * proposals and burn AI cost without ever being sold anything.
  *
- * ---------------------------------------------------------------------------
- * THE GRANDFATHERING RULE (why `unsubscribed` is not `zero`).
- *
- * A company with no subscription record at all is not a lapsed customer — it is
- * a customer who predates billing, which at this point is every existing tenant.
- * Treating "no subscription" as "no entitlement" would have silently switched off
- * proposal creation for every one of them the day this module landed, breaking
- * the 113-test verified baseline for a product reason nobody asked for.
- *
- * So absence of a subscription resolves to `unsubscribed`, which grants the
- * legacy unlimited behaviour and says so loudly (`grandfathered: true`) so the
- * dashboard can nudge the account toward a plan. Only a tenant that HAS a
- * subscription and has LOST it becomes `restricted`. That distinction is the
- * whole reason the state machine below is not just a boolean.
+ * Tenants that legitimately predate billing (Abrica, the development tenants) keep
+ * working through an EXPLICIT grant — `kind: 'internal'` — recorded in
+ * `entitlementOverrides/{companyId}` with the operator who created it. That is a
+ * deliberate, auditable, per-tenant decision rather than an emergent default.
  *
  * ---------------------------------------------------------------------------
- * WHAT A LAPSED SUBSCRIPTION DOES NOT DO.
+ * PROSPECTS DO NOT NEED A SUBSCRIPTION.
  *
- * `restricted` blocks growth — new seats, new proposals, new documents. It does
- * NOT break work that is already live. A proposal sitting in a prospect's inbox
- * keeps answering, because the customer's failed card is not the prospect's
- * problem, and destroying a deal in progress to collect a subscription is a
- * worse business outcome than a delayed invoice. This is a deliberate product
- * decision, tested explicitly in entitlements.test.mjs.
+ * A prospect's ability to open, question, accept and download an authorized
+ * proposal is governed by the proposal's own access token and publication state,
+ * not by the seller's billing position. That is why `proposalAccessPreserved()`
+ * exists and always returns true: lapsed billing must never break a document a
+ * third party has already been sent. What billing DOES govern is how much NEW
+ * model spend the seller's account may incur — see `LAPSED_AI_ALLOWANCE_USD`.
+ *
+ * ---------------------------------------------------------------------------
+ * NO PRICING LIVES IN THIS FILE.
+ *
+ * A plan carries limits, feature flags and the Stripe price ids it can be bought
+ * through. It never carries an amount: the moment an amount exists in our code
+ * there are two sources of truth for what a customer pays, and the local one will
+ * eventually disagree with the charged one. Stripe owns every monetary value.
+ * `priceNote` is display text and is documented as non-authoritative — never
+ * parsed, never summed, never enforced.
  */
 import { z } from 'zod';
 
@@ -105,10 +103,8 @@ export const PlanDefinition = z.object({
   limits: PlanLimits,
   features: PlanFeatures,
   /**
-   * DISPLAY ONLY. Shown in the dashboard next to the plan name so an admin can
-   * write "Contact sales" for a negotiated pilot. Never parsed, never summed,
-   * never used in an enforcement decision — the checkout amount comes from
-   * Stripe's price object.
+   * DISPLAY ONLY. Shown next to the plan name so an operator can write "Contact
+   * sales" for a negotiated pilot. Never parsed, summed or enforced.
    */
   priceNote: z.string().max(80).default(''),
   /** Days of grace after a failed payment before the account is restricted. */
@@ -123,12 +119,9 @@ export type PlanDefinition = z.infer<typeof PlanDefinition>;
 // -------------------------------------------------------------- subscription
 
 /**
- * Subscription status. The first block is Stripe's vocabulary verbatim, because
- * the webhook writes it straight through; the last two are ours.
- *
- * Keeping Stripe's names (rather than normalising to a smaller enum) means a
- * support engineer reading a Stripe dashboard and our record sees the same word,
- * which is worth more than a tidier type.
+ * Subscription status. Stripe's vocabulary verbatim, because the webhook writes it
+ * straight through; keeping the same words means a support engineer comparing our
+ * record to the Stripe dashboard is not translating between two enums.
  */
 export const SubscriptionStatus = z.enum([
   'active',
@@ -161,27 +154,30 @@ export const SubscriptionRecord = z.object({
 });
 export type SubscriptionRecord = z.infer<typeof SubscriptionRecord>;
 
-// ------------------------------------------------------------ pilot override
+// ------------------------------------------------------- administrative grant
 
 /**
- * A sanctioned administrative override, for pilot customers.
+ * An explicit administrative grant.
  *
- * Two rules make this safe to have at all:
+ * Two kinds, because they answer different questions:
  *
- *   1. IT MUST EXPIRE. `expiresAt` is REQUIRED whenever the override is enabled,
- *      and an expired override is ignored entirely at read time — not ignored in
- *      the dashboard, ignored in the resolver. A grant that could be created
- *      without an end date is how a free pilot quietly becomes a free plan
- *      forever, and no one notices because the dashboard just shows "Pilot".
+ *   'internal' — our own account and tenants that predate billing. Long-lived by
+ *                design; an internal grant may omit `expiresAt` because the
+ *                tenant is not on a clock, it is simply outside billing.
+ *   'pilot'    — a time-boxed trial for a prospective customer. REQUIRES an
+ *                expiry, because a pilot that can be created without an end date
+ *                is how a free trial quietly becomes a permanent free plan.
  *
- *   2. IT IS ADMIN-ONLY AND AUDITED. The callable that writes this is gated on
- *      `platform_admin`, and every write appends an audit entry naming the
- *      operator, the tenant and the new limits. A pilot grant is a commercial
- *      decision and has to be attributable to a person.
+ * Both are platform_admin only and both are audited with the operator's uid, so
+ * "who gave this customer access, and until when" is answerable months later.
  */
+export const GrantKind = z.enum(['internal', 'pilot']);
+export type GrantKind = z.infer<typeof GrantKind>;
+
 export const PilotOverride = z
   .object({
     enabled: z.boolean().default(false),
+    kind: GrantKind.default('pilot'),
     /** Grant a plan's limits wholesale, or… */
     planId: z.string().max(60).nullable().default(null),
     /** …override individual limits on top of whatever plan is granted. */
@@ -190,8 +186,8 @@ export const PilotOverride = z
     expiresAt: z.date().nullable().default(null),
     note: z.string().max(1000).default(''),
   })
-  .refine((v) => !v.enabled || v.expiresAt instanceof Date, {
-    message: 'A pilot override must have an expiry date',
+  .refine((v) => !v.enabled || v.kind === 'internal' || v.expiresAt instanceof Date, {
+    message: 'A pilot grant must have an expiry date',
     path: ['expiresAt'],
   });
 export type PilotOverride = z.infer<typeof PilotOverride>;
@@ -199,18 +195,11 @@ export type PilotOverride = z.infer<typeof PilotOverride>;
 // ------------------------------------------------------------------- states
 
 /**
- * What a company's billing position means for what it may do.
- *
- *   unsubscribed — no subscription record; legacy/grandfathered. Full access.
- *   pilot        — an active, unexpired administrative override. Full access.
- *   active       — paid and current. Full access.
- *   trialing     — inside a trial. Full access.
- *   grace        — payment failed but inside the grace window. Full access, and
- *                  the dashboard must say so, because the customer is about to
- *                  lose access and only we know it.
- *   restricted   — lapsed. Growth blocked, live work preserved.
+ *   unentitled — nothing granted. DENIED. The safe default.
+ *   granted    — an explicit internal or pilot grant is in force.
+ *   active / trialing / grace / restricted — subscription-driven.
  */
-export type EntitlementState = 'unsubscribed' | 'pilot' | 'active' | 'trialing' | 'grace' | 'restricted';
+export type EntitlementState = 'unentitled' | 'granted' | 'active' | 'trialing' | 'grace' | 'restricted';
 
 export interface ResolvedEntitlements {
   state: EntitlementState;
@@ -218,28 +207,72 @@ export interface ResolvedEntitlements {
   planName: string | null;
   limits: PlanLimits;
   features: PlanFeatures;
-  /** True when access derives from the absence of billing, not from a grant. */
-  grandfathered: boolean;
+  /** True when nothing has been granted and an operator must intervene. */
+  needsPlan: boolean;
+  /** Which kind of administrative grant is in force, when `state === 'granted'`. */
+  grantKind: GrantKind | null;
   /** May the company create new users, proposals and documents? */
   canGrow: boolean;
   /** Days left in the grace window, or null outside it. */
   graceDaysRemaining: number | null;
-  /** ISO date the pilot override or paid period ends, when known. */
+  /** ISO date the grant or paid period ends, when known. */
   endsAt: string | null;
   cancelAtPeriodEnd: boolean;
   /** Machine-readable explanation for the dashboard, never shown to a prospect. */
   reasons: string[];
 }
 
-/** Unlimited, for tenants that predate billing. */
-const LEGACY_LIMITS: PlanLimits = {
+/**
+ * Monthly AI allowance for an account that has lost its entitlement, in USD.
+ *
+ * THIS IS AN OPERATIONAL SAFETY CAP, NOT A PRICE. It exists to answer one
+ * question: how much model spend may a lapsed account incur while a prospect is
+ * still reading a proposal we already sent them? The answer has to be "a little,
+ * not none and not unlimited":
+ *
+ *   - Not none, because cutting the assistant off mid-negotiation punishes the
+ *     prospect for the seller's failed card, and destroys a deal that would have
+ *     paid for a year of subscription.
+ *   - Not unlimited, because an expired account must not be an unmetered API key.
+ *
+ * It is deliberately a constant rather than a plan field: a lapsed account may not
+ * even have a resolvable plan, and this floor must still apply. It is also far
+ * below any real plan's cap, so it can never be more generous than paying.
+ */
+export const LAPSED_AI_ALLOWANCE_USD = 2;
+
+/** Nothing granted: no growth, and no model spend at all. */
+const DENIED_LIMITS: PlanLimits = {
+  maxUsers: 0,
+  maxActiveProposals: 0,
+  maxDocumentStorageMb: 0,
+  aiMonthlyBudgetUsd: 0,
+};
+
+const DENIED_FEATURES: PlanFeatures = {
+  documentIntelligence: false,
+  companyIntelligence: false,
+  customBranding: false,
+  advancedAnalytics: false,
+};
+
+/**
+ * Limits for an internal grant that names no plan.
+ *
+ * Growth is uncapped: these accounts are not what a paid plan protects against.
+ * The AI ceiling is `null` — "no PLAN cap" — so `effectiveAiBudgetUsd` falls
+ * through to the company's own configured setting, which is a finite number. An
+ * internal grant therefore still cannot spend without limit; it is simply not
+ * bounded by a plan it never bought.
+ */
+const INTERNAL_LIMITS: PlanLimits = {
   maxUsers: null,
   maxActiveProposals: null,
   maxDocumentStorageMb: null,
   aiMonthlyBudgetUsd: null,
 };
 
-const LEGACY_FEATURES: PlanFeatures = {
+const INTERNAL_FEATURES: PlanFeatures = {
   documentIntelligence: true,
   companyIntelligence: true,
   customBranding: true,
@@ -249,17 +282,16 @@ const LEGACY_FEATURES: PlanFeatures = {
 /**
  * Fail-closed defaults when a subscription names a plan that cannot be resolved.
  *
- * This is not a "free tier" — it is what a company gets when their plan record
- * was deleted or their price is unknown, and it deliberately grants almost
- * nothing that costs us money while still letting existing live proposals run.
- * A resolver that fell back to unlimited on an unknown plan would turn a data
- * bug into a revenue leak.
+ * Not a free tier — this is the state after a plan record was deleted or a price
+ * became unknown. Growth is zeroed; the AI allowance is the lapsed floor so live
+ * proposals keep answering. A resolver that fell back to unlimited here would turn
+ * a data bug into a revenue leak.
  */
 const UNKNOWN_PLAN_LIMITS: PlanLimits = {
   maxUsers: 0,
   maxActiveProposals: 0,
   maxDocumentStorageMb: 0,
-  aiMonthlyBudgetUsd: null, // null so prospect chat keeps working; see below
+  aiMonthlyBudgetUsd: LAPSED_AI_ALLOWANCE_USD,
 };
 
 const UNKNOWN_PLAN_FEATURES: PlanFeatures = {
@@ -270,18 +302,19 @@ const UNKNOWN_PLAN_FEATURES: PlanFeatures = {
 };
 
 /**
- * Limits applied once a paid subscription has actually lapsed.
+ * Limits once a paid subscription has actually lapsed.
  *
- * Growth is zeroed; the AI allowance becomes `null` ("no plan-imposed cap") so
- * the per-company setting continues to govern and a live prospect conversation is
- * not severed by a failed card. See the module header.
+ * Growth zeroed; AI capped at the TIGHTER of the plan's own cap and the lapsed
+ * floor, so a lapsed enterprise plan cannot keep its full allowance simply by
+ * having once been large.
  */
 function restrictedLimits(lapsedPlan: PlanLimits | null): PlanLimits {
+  const planCap = lapsedPlan?.aiMonthlyBudgetUsd ?? null;
   return {
     maxUsers: 0,
     maxActiveProposals: 0,
     maxDocumentStorageMb: 0,
-    aiMonthlyBudgetUsd: lapsedPlan?.aiMonthlyBudgetUsd ?? null,
+    aiMonthlyBudgetUsd: planCap === null ? LAPSED_AI_ALLOWANCE_USD : Math.min(planCap, LAPSED_AI_ALLOWANCE_USD),
   };
 }
 
@@ -297,7 +330,7 @@ export interface ResolveInput {
   subscription: SubscriptionRecord | null;
   /** The plan the subscription points at, already looked up by the caller. */
   plan: PlanDefinition | null;
-  /** A plan granted by the pilot override, when `override.planId` is set. */
+  /** A plan granted by the administrative grant, when `override.planId` is set. */
   overridePlan?: PlanDefinition | null;
   override: PilotOverride | null;
   /** Injected so every lifecycle branch is testable without freezing time. */
@@ -307,54 +340,59 @@ export interface ResolveInput {
 /**
  * Resolve what a company is entitled to right now.
  *
- * Order of precedence, and why:
- *   1. Pilot override — it exists precisely to put a customer outside normal
- *      billing for a while, so it must beat the subscription it is standing in
- *      for. Expiry is checked first so a stale grant is dead on arrival.
- *   2. No subscription — grandfathered.
- *   3. The subscription's own status and dates.
+ * Order of precedence:
+ *   1. An unexpired administrative grant — it exists precisely to place a tenant
+ *      outside normal billing, so it beats whatever the subscription says.
+ *   2. A subscription record, by status and dates.
+ *   3. Nothing → `unentitled`, denied.
  */
 export function resolveEntitlements(input: ResolveInput): ResolvedEntitlements {
   const { subscription, plan, override, now } = input;
 
-  // ---- 1. pilot override ----
-  if (override?.enabled && override.expiresAt && override.expiresAt.getTime() > now.getTime()) {
+  // ---- 1. administrative grant ----
+  const grantLive =
+    override?.enabled === true &&
+    (override.expiresAt === null || override.expiresAt.getTime() > now.getTime());
+
+  if (override?.enabled && grantLive) {
     const granted = input.overridePlan ?? plan;
-    const baseLimits = granted?.limits ?? LEGACY_LIMITS;
-    const baseFeatures = granted?.features ?? LEGACY_FEATURES;
+    const baseLimits = granted?.limits ?? INTERNAL_LIMITS;
+    const baseFeatures = granted?.features ?? INTERNAL_FEATURES;
 
     const limits: PlanLimits = { ...baseLimits, ...definedOnly(override.limits) };
     const features: PlanFeatures = { ...baseFeatures, ...definedOnly(override.features) };
 
     return {
-      state: 'pilot',
+      state: 'granted',
       planId: override.planId ?? granted?.id ?? null,
-      planName: granted?.name ?? 'Pilot',
+      planName: granted?.name ?? (override.kind === 'internal' ? 'Internal' : 'Pilot'),
       limits,
       features,
-      grandfathered: false,
+      needsPlan: false,
+      grantKind: override.kind,
       canGrow: true,
       graceDaysRemaining: null,
-      endsAt: override.expiresAt.toISOString(),
+      endsAt: override.expiresAt ? override.expiresAt.toISOString() : null,
       cancelAtPeriodEnd: false,
-      reasons: ['pilot_override_active'],
+      reasons: [override.kind === 'internal' ? 'internal_grant_active' : 'pilot_grant_active'],
     };
   }
 
-  // ---- 2. no subscription: grandfathered ----
+  // ---- 2. nothing at all: denied ----
   if (!subscription) {
     return {
-      state: 'unsubscribed',
+      state: 'unentitled',
       planId: null,
       planName: null,
-      limits: LEGACY_LIMITS,
-      features: LEGACY_FEATURES,
-      grandfathered: true,
-      canGrow: true,
+      limits: DENIED_LIMITS,
+      features: DENIED_FEATURES,
+      needsPlan: true,
+      grantKind: null,
+      canGrow: false,
       graceDaysRemaining: null,
       endsAt: null,
       cancelAtPeriodEnd: false,
-      reasons: ['no_subscription_on_record'],
+      reasons: ['no_entitlement_granted'],
     };
   }
 
@@ -365,9 +403,8 @@ export function resolveEntitlements(input: ResolveInput): ResolvedEntitlements {
   // ---- 3. subscription-driven states ----
   switch (status) {
     case 'active': {
-      // Paid through the period, even if a cancellation is scheduled for its end.
-      if (periodEnded) return restrictedFor(subscription, plan, now, ['period_ended_without_renewal']);
-      return grant('active', subscription, plan, {
+      if (periodEnded) return restrictedFor(subscription, plan, ['period_ended_without_renewal']);
+      return grantState('active', subscription, plan, {
         endsAt: subscription.cancelAtPeriodEnd && periodEnd ? periodEnd.toISOString() : null,
         reasons: subscription.cancelAtPeriodEnd ? ['cancels_at_period_end'] : [],
       });
@@ -376,11 +413,9 @@ export function resolveEntitlements(input: ResolveInput): ResolvedEntitlements {
     case 'trialing': {
       const trialEnd = subscription.trialEnd ?? periodEnd;
       if (trialEnd && trialEnd.getTime() <= now.getTime()) {
-        // A finished trial is not a paid customer. Restricted, not unsubscribed:
-        // they had a grant and lost it, so growth stops.
-        return restrictedFor(subscription, plan, now, ['trial_expired']);
+        return restrictedFor(subscription, plan, ['trial_expired']);
       }
-      return grant('trialing', subscription, plan, {
+      return grantState('trialing', subscription, plan, {
         endsAt: trialEnd ? trialEnd.toISOString() : null,
         reasons: [],
       });
@@ -393,27 +428,27 @@ export function resolveEntitlements(input: ResolveInput): ResolvedEntitlements {
       if (graceEnds && graceEnds.getTime() > now.getTime()) {
         const remaining = Math.ceil((graceEnds.getTime() - now.getTime()) / DAY_MS);
         return {
-          ...grant('grace', subscription, plan, {
+          ...grantState('grace', subscription, plan, {
             endsAt: graceEnds.toISOString(),
             reasons: ['payment_failed_within_grace'],
           }),
           graceDaysRemaining: remaining,
         };
       }
-      return restrictedFor(subscription, plan, now, ['grace_period_expired']);
+      return restrictedFor(subscription, plan, ['grace_period_expired']);
     }
 
     case 'canceled': {
-      // Stripe keeps the subscription "active" until period end when set to
-      // cancel at period end, so a `canceled` status with future period means the
-      // cancellation was immediate; with a past period it simply lapsed.
-      if (periodEnd && periodEnd.getTime() > now.getTime() && !periodEnded) {
-        return grant('active', subscription, plan, {
+      // Stripe keeps a subscription "active" until period end when cancel-at-period-
+      // end is set; a `canceled` status with a FUTURE period means paid-through
+      // access, with a past period means it simply lapsed.
+      if (periodEnd && periodEnd.getTime() > now.getTime()) {
+        return grantState('active', subscription, plan, {
           endsAt: periodEnd.toISOString(),
           reasons: ['paid_through_period_after_cancellation'],
         });
       }
-      return restrictedFor(subscription, plan, now, ['subscription_canceled']);
+      return restrictedFor(subscription, plan, ['subscription_canceled']);
     }
 
     case 'incomplete':
@@ -422,11 +457,11 @@ export function resolveEntitlements(input: ResolveInput): ResolvedEntitlements {
     case 'paused':
     case 'expired':
     default:
-      return restrictedFor(subscription, plan, now, [`status_${status}`]);
+      return restrictedFor(subscription, plan, [`status_${status}`]);
   }
 }
 
-/** Drop keys whose value is `undefined`, so a partial override cannot blank a limit. */
+/** Drop keys whose value is `undefined`, so a partial grant cannot blank a limit. */
 function definedOnly<T extends Record<string, unknown>>(obj: T | undefined): Partial<T> {
   if (!obj) return {};
   const out: Record<string, unknown> = {};
@@ -436,49 +471,46 @@ function definedOnly<T extends Record<string, unknown>>(obj: T | undefined): Par
   return out as Partial<T>;
 }
 
-function grant(
+function grantState(
   state: Extract<EntitlementState, 'active' | 'trialing' | 'grace'>,
   subscription: SubscriptionRecord,
   plan: PlanDefinition | null,
   extra: { endsAt: string | null; reasons: string[] },
 ): ResolvedEntitlements {
-  const resolvedPlan = plan !== null;
   return {
     state,
     planId: subscription.planId ?? plan?.id ?? null,
     planName: plan?.name ?? null,
     limits: plan?.limits ?? UNKNOWN_PLAN_LIMITS,
     features: plan?.features ?? UNKNOWN_PLAN_FEATURES,
-    grandfathered: false,
+    needsPlan: false,
+    grantKind: null,
     canGrow: true,
     graceDaysRemaining: null,
     endsAt: extra.endsAt,
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-    reasons: resolvedPlan ? extra.reasons : [...extra.reasons, 'plan_unresolved'],
+    reasons: plan !== null ? extra.reasons : [...extra.reasons, 'plan_unresolved'],
   };
 }
 
 function restrictedFor(
   subscription: SubscriptionRecord,
   plan: PlanDefinition | null,
-  now: Date,
   reasons: string[],
 ): ResolvedEntitlements {
-  void now;
   return {
     state: 'restricted',
     planId: subscription.planId ?? plan?.id ?? null,
     planName: plan?.name ?? null,
     limits: restrictedLimits(plan?.limits ?? null),
     features: {
-      // Read-only access to what they already built. Document *retrieval* keeps
-      // working for existing proposals; new uploads are blocked by the zero limit.
       documentIntelligence: false,
       companyIntelligence: true,
       customBranding: plan?.features.customBranding ?? false,
       advancedAnalytics: false,
     },
-    grandfathered: false,
+    needsPlan: false,
+    grantKind: null,
     canGrow: false,
     graceDaysRemaining: null,
     endsAt: null,
@@ -494,6 +526,7 @@ export type EntitlementCode =
   | 'plan_limit_reached'
   | 'feature_not_in_plan'
   | 'subscription_inactive'
+  | 'no_entitlement'
   | 'ai_budget_exceeded';
 
 export interface EntitlementDecision {
@@ -507,8 +540,18 @@ export interface EntitlementDecision {
 
 const OK: EntitlementDecision = { allowed: true, code: 'ok', message: 'OK' };
 
+/** The refusal used whenever an account has nothing granted. */
+function noEntitlement(what: string): EntitlementDecision {
+  return {
+    allowed: false,
+    code: 'no_entitlement',
+    message: `This account has no active plan, so ${what} is unavailable. Contact us to activate access.`,
+  };
+}
+
 /** Adding a seat. `currentUsers` must include the admin and any pending invites. */
 export function checkCanAddUser(ent: ResolvedEntitlements, currentUsers: number): EntitlementDecision {
+  if (ent.state === 'unentitled') return noEntitlement('adding team members');
   if (!ent.canGrow) {
     return {
       allowed: false,
@@ -534,6 +577,7 @@ export function checkCanCreateProposal(
   ent: ResolvedEntitlements,
   currentActiveProposals: number,
 ): EntitlementDecision {
+  if (ent.state === 'unentitled') return noEntitlement('creating proposals');
   if (!ent.canGrow) {
     return {
       allowed: false,
@@ -560,6 +604,7 @@ export function checkCanStoreDocuments(
   currentMb: number,
   addMb: number,
 ): EntitlementDecision {
+  if (ent.state === 'unentitled') return noEntitlement('uploading documents');
   if (!ent.features.documentIntelligence) {
     return {
       allowed: false,
@@ -588,6 +633,7 @@ export function checkCanStoreDocuments(
 }
 
 export function checkFeature(ent: ResolvedEntitlements, feature: FeatureKey): EntitlementDecision {
+  if (ent.state === 'unentitled') return noEntitlement(FEATURE_LABELS[feature].toLowerCase());
   if (ent.features[feature]) return OK;
   return {
     allowed: false,
@@ -606,23 +652,23 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
 /**
  * The monthly AI ceiling actually in force, in USD, or null for "no ceiling".
  *
- * THE TIGHTER OF THE TWO, the same principle as Phase One's commercial
- * authority: a plan may lower the allowance a company configured for itself, but
- * a company setting may never raise itself above what it bought. Getting this
- * backwards would let an admin type `aiBudgetUsd: 100000` into the company
- * document and silently override the plan.
+ * THE TIGHTER OF THE TWO, the same principle as Phase One's commercial authority:
+ * a plan may lower the allowance a company configured for itself, but a company
+ * setting may never raise itself above what it bought. Getting this backwards
+ * would let an admin type `aiBudgetUsd: 100000` into the company document and
+ * silently override the plan.
  *
- * An `unsubscribed` (grandfathered) tenant has `aiMonthlyBudgetUsd: null`, so its
- * own setting governs and existing behaviour is preserved exactly.
+ * An unentitled company resolves to a plan cap of 0, so it cannot spend at all
+ * regardless of what its own settings claim — the default-deny rule reaching all
+ * the way down to the model call.
  */
 export function effectiveAiBudgetUsd(
   ent: ResolvedEntitlements,
   companySettingUsd: number | null | undefined,
 ): number | null {
   const planCap = ent.limits.aiMonthlyBudgetUsd;
-  const companyCap = typeof companySettingUsd === 'number' && Number.isFinite(companySettingUsd)
-    ? companySettingUsd
-    : null;
+  const companyCap =
+    typeof companySettingUsd === 'number' && Number.isFinite(companySettingUsd) ? companySettingUsd : null;
 
   if (planCap === null && companyCap === null) return null;
   if (planCap === null) return companyCap;
@@ -631,18 +677,11 @@ export function effectiveAiBudgetUsd(
 }
 
 /**
- * True when the company has spent its whole allowance this month.
+ * Whether the month's allowance is spent.
  *
  * `companyBudgetUsd` is the caller's company-level setting, ALREADY defaulted to
- * the platform fallback when unset. That defaulting belongs to the caller because
+ * the platform fallback when unset — that defaulting belongs to the caller because
  * the fallback is an operational constant, not an entitlement rule.
- *
- * There is deliberately no special case for `restricted` tenants. `effectiveAiBudgetUsd`
- * already returns the TIGHTER of the (possibly lapsed) plan cap and the company
- * setting, so a lapsed tenant is capped at whichever is lower — which is exactly
- * the behaviour we want: a live prospect conversation is not severed by a failed
- * card, but a lapsed account cannot generate unlimited new model spend either.
- * An explicit zero cap on a lapsed plan still blocks, because `min(0, n) = 0`.
  */
 export function checkAiBudget(
   ent: ResolvedEntitlements,
@@ -650,8 +689,17 @@ export function checkAiBudget(
   companyBudgetUsd: number | null | undefined,
 ): EntitlementDecision {
   const budget = effectiveAiBudgetUsd(ent, companyBudgetUsd);
+  // A zero budget means every request is already at the ceiling, including an
+  // unentitled account that has spent nothing.
   if (budget === null) return OK;
-  if (spentMicroUsd >= budget * 1_000_000) {
+  if (budget <= 0 || spentMicroUsd >= budget * 1_000_000) {
+    if (ent.state === 'unentitled') {
+      return {
+        allowed: false,
+        code: 'no_entitlement',
+        message: 'This account has no active plan, so the assistant is unavailable.',
+      };
+    }
     return {
       allowed: false,
       code: 'ai_budget_exceeded',
@@ -661,17 +709,41 @@ export function checkAiBudget(
   return OK;
 }
 
+// -------------------------------------------------- existing-proposal access
+
+/**
+ * Whether an already-published proposal may still be opened, questioned, accepted
+ * and downloaded.
+ *
+ * ALWAYS TRUE, deliberately, and this function exists so that the rule is stated
+ * once and cannot be "optimised" into a billing check by a later change.
+ *
+ * A proposal is a document we have already sent a third party. The seller's failed
+ * card, cancelled plan or expired pilot is not the prospect's problem, and pulling
+ * a live commercial document mid-negotiation would be both commercially damaging
+ * and, for a document already signed, potentially a legal problem. Billing governs
+ * NEW work and NEW spend; it does not reach backwards into a link already issued.
+ *
+ * The signature takes the entitlements so callers read naturally, and ignores them
+ * so nothing can accidentally start gating on it.
+ */
+export function proposalAccessPreserved(_ent: ResolvedEntitlements): true {
+  return true;
+}
+
 // ------------------------------------------------------------------- helpers
 
 /**
  * Find the plan that grants a Stripe price.
  *
- * Used by the webhook when Stripe tells us which price a subscription carries but
- * not which of our plans that is. An inactive plan still matches, because an
- * existing subscriber on a retired plan must keep the plan they bought — retiring
- * a plan stops new purchases, it does not evict current customers.
+ * An inactive plan still matches: an existing subscriber on a retired plan keeps
+ * what they bought. Retiring a plan stops new purchases, it does not evict
+ * current customers.
  */
-export function planForPriceId(plans: PlanDefinition[], priceId: string | null | undefined): PlanDefinition | null {
+export function planForPriceId(
+  plans: PlanDefinition[],
+  priceId: string | null | undefined,
+): PlanDefinition | null {
   if (!priceId) return null;
   return plans.find((p) => p.stripePriceIds.includes(priceId)) ?? null;
 }
@@ -686,18 +758,17 @@ export function sortPlans(plans: PlanDefinition[]): PlanDefinition[] {
   return [...plans].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
 
-/**
- * A short, staff-facing summary of the billing position.
- * Deliberately terse — the dashboard renders it in a status pill.
- */
+/** A short, staff-facing summary of the billing position. */
 export function describeEntitlements(ent: ResolvedEntitlements): string {
   switch (ent.state) {
-    case 'unsubscribed':
-      return 'No plan';
-    case 'pilot':
-      return `Pilot — ${ent.planName ?? 'granted access'}`;
+    case 'unentitled':
+      return 'No plan — access not granted';
+    case 'granted':
+      return `${ent.grantKind === 'internal' ? 'Internal access' : 'Pilot'} — ${ent.planName ?? 'granted'}`;
     case 'active':
-      return ent.cancelAtPeriodEnd ? `${ent.planName ?? 'Active'} — cancels at period end` : ent.planName ?? 'Active';
+      return ent.cancelAtPeriodEnd
+        ? `${ent.planName ?? 'Active'} — cancels at period end`
+        : ent.planName ?? 'Active';
     case 'trialing':
       return `Trial — ${ent.planName ?? 'in progress'}`;
     case 'grace':
