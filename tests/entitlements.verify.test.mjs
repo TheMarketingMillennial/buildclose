@@ -1,24 +1,39 @@
 /**
  * Phase 2 integration verification — subscription entitlement enforcement.
  *
- * The pure rules are proven in `entitlements.test.mjs` (40 tests, no emulator).
- * This suite proves the part that unit tests cannot: that the rules are actually
- * WIRED INTO the write paths, and that a real callable call is really refused.
+ * The pure rules are proven in `entitlements.test.mjs` (no emulator). This suite
+ * proves the part unit tests cannot: that the rules are actually WIRED INTO the
+ * write paths, and that a real callable call is really refused.
  *
  * What it defends, in order of consequence:
  *
- *   1. A company on a plan with one active proposal is allowed exactly one, and
+ *   1. DENY BY DEFAULT. A company with no subscription and no grant is
+ *      `unentitled`: zero seats, zero proposals, zero model spend. The absence of
+ *      a subscription record is never read as permission. (An earlier draft
+ *      treated this as "grandfathered, unlimited"; that is the behaviour this
+ *      suite exists to prevent from coming back.)
+ *   2. An EXPLICIT internal grant restores access, and clearing it removes access
+ *      again. This is how Abrica and the development tenants legitimately keep
+ *      working: a deliberate, auditable, per-tenant decision — not an emergent
+ *      default.
+ *   3. A company on a plan with one active proposal is allowed exactly one, and
  *      the second is refused with `resource-exhausted` — not silently created.
- *   2. Archiving a proposal frees the slot, so the limit is a live count rather
+ *   4. Archiving a proposal frees the slot, so the limit is a live count rather
  *      than a cumulative tally that punishes archiving.
- *   3. A seat limit is enforced BEFORE a Firebase Auth user is created, so a
+ *   5. A seat limit is enforced BEFORE a Firebase Auth user is created, so a
  *      refused invite leaves no orphaned account behind.
- *   4. A pilot override restores access, and an EXPIRED one does not — the grant
- *      is re-evaluated at read time, not trusted because it exists.
- *   5. A tenant with no subscription at all stays unlimited (grandfathered). This
- *      is the property that keeps every existing customer working.
- *   6. Only a platform_admin may define a plan. A company_admin is refused, which
+ *   6. A pilot grant restores access, and an EXPIRED one does not — the grant is
+ *      re-evaluated at read time, not trusted because it exists.
+ *   7. A lapsed subscription blocks growth but keeps a SMALL AI allowance: a
+ *      little, not none and not unlimited.
+ *   8. Only a platform_admin may define a plan. A company_admin is refused, which
  *      is what stops a tenant granting itself a bigger plan.
+ *
+ * Fixture policy (see tests/support/staff-fixture.mjs):
+ *   - `TENANT` is subscription-driven and carries NO internal grant, so the plan
+ *     limits are the only thing that can allow or deny.
+ *   - `TENANT_LEGACY` deliberately receives NO grant until the test that proves
+ *     grants work, because it is the fixture for unentitled access.
  *
  * Run:  node --test tests/entitlements.verify.test.mjs
  * Needs: emulator (auth, firestore, functions) running. No OpenAI stub required.
@@ -35,6 +50,7 @@ import {
   proposalPayload,
   cleanupCompany,
   cleanupUsers,
+  grantInternal,
 } from './support/staff-fixture.mjs';
 
 // Prefix distinct from every other suite so parallel/running order cannot overlap.
@@ -78,13 +94,37 @@ function planPayload(overrides = {}) {
   };
 }
 
+/**
+ * Remove every proposal a test tenant owns, AND reset the usage counter.
+ *
+ * Several tests below assert on the ACTIVE proposal count, so leftover proposals
+ * from an earlier test would make a later one fail for the previous test's reason.
+ *
+ * The counter reset matters just as much: reservations are counted in a
+ * `usageCounters/{companyId}` document that seeds itself from the live row count
+ * exactly once. Deleting the proposal rows without dropping the counter would
+ * leave the counter asserting "1 of 1 used" against an empty collection, and the
+ * next legitimate create would be refused — a failure that looks like an
+ * enforcement bug but is really fixture drift. Dropping the document makes the
+ * next reservation re-seed from the live count, which is the same thing a cold
+ * start does in production.
+ */
+async function clearProposals(companyId = TENANT) {
+  for (const name of ['proposals', 'proposalInternal', 'agentConfigs', 'accessTokens']) {
+    const snap = await db.collection(name).where('companyId', '==', companyId).get();
+    await Promise.all(snap.docs.map((d) => d.ref.delete()));
+  }
+  await db.collection('usageCounters').doc(companyId).delete().catch(() => undefined);
+}
+
 before(async () => {
-  // A company that owns a paid plan.
+  // A company that owns a paid plan. No grant: plan limits are the only authority.
   await db.collection('companies').doc(TENANT).set(
     { name: 'P2 Plan Co', settings: { retentionDays: 365, aiBudgetUsd: 25 } },
     { merge: true },
   );
-  // A company that predates billing entirely: no subscription, no override.
+  // A company that predates billing entirely: no subscription, no override. This
+  // is the unentitled fixture and must stay that way.
   await db.collection('companies').doc(TENANT_LEGACY).set(
     { name: 'P2 Legacy Co', settings: { retentionDays: 365, aiBudgetUsd: 25 } },
     { merge: true },
@@ -101,6 +141,11 @@ before(async () => {
   ctx.legacyAdmin = (await signIn(EMAILS.legacyAdmin)).idToken;
   ctx.operator = (await signIn(EMAILS.operator)).idToken;
 
+  // A rerun must start from a known slate: no stale proposals, no stale counters,
+  // and no grant left on the tenant that is supposed to have none.
+  await clearProposals();
+  await db.collection('entitlementOverrides').doc(TENANT_LEGACY).delete().catch(() => undefined);
+
   // Define the plan through the real callable, so the operator path is exercised.
   // Remove any plan left by a previous run first: the suite must be rerunnable,
   // and createPlan correctly refuses a duplicate id.
@@ -116,10 +161,6 @@ after(async () => {
 
   // Plans are company-wide, so they are not removed by cleanupCompany.
   await db.collection('plans').doc(PLAN_ID).delete().catch(() => undefined);
-  await db.collection('entitlementOverrides').doc(TENANT).delete().catch(() => undefined);
-  await db.collection('entitlementOverrides').doc(TENANT_LEGACY).delete().catch(() => undefined);
-  await db.collection('subscriptions').doc(TENANT).delete().catch(() => undefined);
-  await db.collection('subscriptions').doc(TENANT_LEGACY).delete().catch(() => undefined);
 });
 
 /** Put the tenant on a healthy subscription for the starter plan. */
@@ -152,33 +193,21 @@ test('a plan can only be defined by a platform administrator', async () => {
 
 test('the entitlement callable reports the plan, usage and a stable state', async () => {
   await activateSubscription();
+  await clearProposals();
 
   const ent = await call('getCompanyEntitlements', {}, ctx.admin);
 
   assert.equal(ent.state, 'active');
   assert.equal(ent.planId, PLAN_ID);
   assert.equal(ent.canGrow, true);
-  assert.equal(ent.grandfathered, false);
+  assert.equal(ent.needsPlan, false, 'a subscribed company is not pending a plan');
+  assert.equal(ent.grantKind, null, 'a subscription is not an administrative grant');
   assert.equal(ent.limits.maxActiveProposals, 1);
   // The admin user itself occupies the single seat.
   assert.equal(ent.usage.users, 1);
   assert.equal(ent.usage.activeProposals, 0);
   assert.equal(ent.canManageBilling, true);
 });
-
-/**
- * Remove every proposal a test tenant owns.
- *
- * Several tests below assert on the ACTIVE proposal count, so leftover proposals
- * from an earlier test would make a later one fail for the previous test's reason.
- * Clearing between them keeps each assertion about its own subject.
- */
-async function clearProposals() {
-  for (const name of ['proposals', 'proposalInternal', 'agentConfigs', 'accessTokens']) {
-    const snap = await db.collection(name).where('companyId', '==', TENANT).get();
-    await Promise.all(snap.docs.map((d) => d.ref.delete()));
-  }
-}
 
 test('the active-proposal limit blocks the second proposal with resource-exhausted', async () => {
   await activateSubscription();
@@ -227,7 +256,7 @@ test('a refused invite creates no orphaned Auth user', async () => {
   );
 });
 
-test('a lapsed subscription blocks growth but keeps the entitlement readable', async () => {
+test('a lapsed subscription blocks growth but keeps a small AI allowance', async () => {
   // Canceled and past its period: restricted.
   await db.collection('subscriptions').doc(TENANT).set(
     {
@@ -243,6 +272,12 @@ test('a lapsed subscription blocks growth but keeps the entitlement readable', a
   const ent = await call('getCompanyEntitlements', {}, ctx.admin);
   assert.equal(ent.state, 'restricted');
   assert.equal(ent.canGrow, false);
+
+  // A little, not none and not unlimited: the lapsed floor applies, and it is
+  // tighter than the plan's own $5 cap so lapsed access can never be more
+  // generous than paying.
+  assert.equal(ent.limits.aiMonthlyBudgetUsd, 2, 'a lapsed account keeps a small, capped allowance');
+  assert.equal(ent.limits.maxActiveProposals, 0, 'but no growth');
 
   await expectFailure(
     call('createProposal', { proposal: proposalPayload({ title: 'P2 Blocked' }) }, ctx.admin),
@@ -270,7 +305,7 @@ test('a past_due subscription inside its grace window keeps full access', async 
   assert.equal(ent.graceDaysRemaining, 4);
 });
 
-test('a pilot override restores access, and expiring it removes it again', async () => {
+test('a pilot grant restores access, and expiring it removes it again', async () => {
   // Start from a lapsed subscription.
   await db.collection('subscriptions').doc(TENANT).set(
     {
@@ -297,7 +332,8 @@ test('a pilot override restores access, and expiring it removes it again', async
   );
 
   const piloted = await call('getCompanyEntitlements', {}, ctx.admin);
-  assert.equal(piloted.state, 'pilot');
+  assert.equal(piloted.state, 'granted');
+  assert.equal(piloted.grantKind, 'pilot', 'a time-boxed grant is a pilot');
   assert.equal(piloted.canGrow, true);
   assert.equal(piloted.limits.maxActiveProposals, 5, 'the override limit applies');
 
@@ -330,7 +366,7 @@ test('clearing a pilot override returns the company to its subscription state', 
     expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
   }, ctx.operator);
 
-  assert.equal((await call('getCompanyEntitlements', {}, ctx.admin)).state, 'pilot');
+  assert.equal((await call('getCompanyEntitlements', {}, ctx.admin)).state, 'granted');
 
   await call('clearEntitlementOverride', { companyId: TENANT }, ctx.operator);
 
@@ -338,18 +374,63 @@ test('clearing a pilot override returns the company to its subscription state', 
   assert.equal((await call('getCompanyEntitlements', {}, ctx.admin)).state, 'restricted');
 });
 
-test('a tenant with no subscription is grandfathered and unlimited', async () => {
+test('a tenant with no subscription and no grant is denied, not grandfathered', async () => {
+  // Make the precondition explicit rather than assuming it: no subscription, no
+  // override. If a previous test leaked a grant, this fails loudly here.
+  await db.collection('subscriptions').doc(TENANT_LEGACY).delete().catch(() => undefined);
+  await db.collection('entitlementOverrides').doc(TENANT_LEGACY).delete().catch(() => undefined);
+  await clearProposals(TENANT_LEGACY);
+
   const ent = await call('getCompanyEntitlements', {}, ctx.legacyAdmin);
 
-  assert.equal(ent.state, 'unsubscribed');
-  assert.equal(ent.grandfathered, true);
-  assert.equal(ent.canGrow, true);
-  assert.equal(ent.limits.maxActiveProposals, null);
+  assert.equal(ent.state, 'unentitled', 'absence of a subscription is not permission');
+  assert.equal(ent.needsPlan, true, 'the dashboard must be told a plan is needed');
+  assert.equal(ent.canGrow, false);
+  assert.equal(ent.limits.maxActiveProposals, 0, 'no proposals');
+  assert.equal(ent.limits.maxUsers, 0, 'no seats');
+  assert.equal(ent.limits.aiMonthlyBudgetUsd, 0, 'and no model spend at all');
+
+  // The write path must refuse too — a denial that only exists in the read
+  // callable is decoration.
+  await expectFailure(
+    call('createProposal', { proposal: proposalPayload({ title: 'P2 Legacy Denied' }) }, ctx.legacyAdmin),
+    'failed-precondition',
+    'proposal on an unentitled tenant',
+  );
+
+  const audits = await db
+    .collection('auditLog')
+    .where('companyId', '==', TENANT_LEGACY)
+    .where('action', '==', 'entitlement.blocked')
+    .limit(5)
+    .get();
+  assert.ok(audits.size > 0, 'the denial is auditable');
+  assert.equal(audits.docs[0].data().detail.code, 'no_entitlement');
+});
+
+test('an explicit internal grant restores access, and clearing it denies again', async () => {
+  // This is the legitimate path for Abrica and the development tenants: a
+  // deliberate per-tenant grant, not an emergent default.
+  await grantInternal(TENANT_LEGACY, { aiMonthlyBudgetUsd: 25 });
+
+  const granted = await call('getCompanyEntitlements', {}, ctx.legacyAdmin);
+  assert.equal(granted.state, 'granted');
+  assert.equal(granted.grantKind, 'internal', 'an open-ended grant is internal, not a pilot');
+  assert.equal(granted.needsPlan, false);
+  assert.equal(granted.canGrow, true);
+  assert.equal(granted.limits.maxActiveProposals, null, 'internal tenants are not plan-capped for growth');
 
   // Two proposals in a row, which the starter plan would have refused.
   const a = await call('createProposal', { proposal: proposalPayload({ title: 'P2 Legacy A' }) }, ctx.legacyAdmin);
   const b = await call('createProposal', { proposal: proposalPayload({ title: 'P2 Legacy B' }) }, ctx.legacyAdmin);
-  assert.ok(a.id && b.id, 'grandfathered tenants are not limited');
+  assert.ok(a.id && b.id, 'an internal grant is not limited by a plan it never bought');
+
+  // Clearing the grant must return the tenant to denied — proving the access was
+  // the explicit grant and never an ambient default.
+  await db.collection('entitlementOverrides').doc(TENANT_LEGACY).delete();
+  const denied = await call('getCompanyEntitlements', {}, ctx.legacyAdmin);
+  assert.equal(denied.state, 'unentitled', 'clearing the grant must deny again');
+  assert.equal(denied.canGrow, false);
 });
 
 test('entitlement blocks are recorded in the audit trail', async () => {
@@ -357,6 +438,19 @@ test('entitlement blocks are recorded in the audit trail', async () => {
   // Start from a known-empty slate: earlier tests left proposals behind, and this
   // test needs its FIRST create to succeed so that the SECOND is the one blocked.
   await clearProposals();
+
+  /**
+   * Clear this tenant's audit trail too.
+   *
+   * The trail is append-only across the whole run, so an earlier test's block (the
+   * refused `user.create` invite) is still the NEWEST row by the time this runs —
+   * and audit rows are not ordered by the query, so asserting on `docs[0]` was
+   * asserting on whichever block happened to sort first. Dropping the tenant's trail
+   * makes the assertion about this test's own block rather than a neighbour's.
+   */
+  const staleAudits = await db.collection('auditLog').where('companyId', '==', TENANT).get();
+  await Promise.all(staleAudits.docs.map((d) => d.ref.delete()));
+
   await call('createProposal', { proposal: proposalPayload({ title: 'P2 Audit Fill' }) }, ctx.admin);
   await expectFailure(
     call('createProposal', { proposal: proposalPayload({ title: 'P2 Audit Blocked' }) }, ctx.admin),
@@ -372,7 +466,10 @@ test('entitlement blocks are recorded in the audit trail', async () => {
     .get();
 
   assert.ok(auditSnap.size > 0, 'a blocked action must leave a trail');
-  const detail = auditSnap.docs[0].data().detail ?? {};
-  assert.equal(detail.attempted, 'proposal.create');
+  // Assert on the block this test caused, not on document order.
+  const proposalBlocks = auditSnap.docs.filter((d) => d.data().detail?.attempted === 'proposal.create');
+  assert.equal(proposalBlocks.length, 1, 'exactly one proposal block is recorded');
+  const detail = proposalBlocks[0].data().detail ?? {};
   assert.equal(detail.code, 'plan_limit_reached');
+  assert.equal(detail.limit, 1, 'the refusal records the limit that was hit');
 });

@@ -492,7 +492,24 @@ export const archiveProposal = onCall({ region: REGION }, async (request) => {
   const ref = db.collection(COLLECTIONS.proposals).doc(parsed.data.id);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Proposal not found');
-  assertProposalAccess(identity, snap.data() as { companyId?: string; ownerUid?: string });
+  const previous = snap.data() as { companyId?: string; ownerUid?: string; status?: string };
+  assertProposalAccess(identity, previous);
+
+  /**
+   * Archiving frees a plan slot, so the counter must be decremented.
+   *
+   * The reservation that `createProposal` took is a COUNTER increment, not a
+   * derived count — so moving a proposal to `archived` does not free the slot by
+   * itself. Without this the counter climbs forever and a tenant on a
+   * five-proposal plan is locked out after five lifetime proposals, no matter how
+   * many they archive. That is a billing bug a customer experiences as the product
+   * breaking.
+   *
+   * Only an active proposal held a slot, so only an active one releases it. A
+   * repeat archive of an already-archived proposal must not decrement again, or
+   * the counter would drift below reality and hand out free slots.
+   */
+  const wasActive = previous.status === 'draft' || previous.status === 'published';
 
   // Archiving revokes every live access token: an archived proposal must not
   // remain reachable through a previously shared link.
@@ -509,13 +526,21 @@ export const archiveProposal = onCall({ region: REGION }, async (request) => {
   }
   await batch.commit();
 
+  /**
+   * Release AFTER the status change commits, so a failure here leaves a proposal
+   * that is archived (correct) with a slot still counted (conservative — it over-
+   * counts rather than over-grants). Releasing first would risk the reverse: a
+   * freed slot on a proposal that is still active, which is a free allowance.
+   */
+  if (wasActive) await releaseProposalSlotFor(identity.companyId);
+
   await audit({
     companyId: identity.companyId,
     action: 'proposal.archived',
     actorType: 'staff',
     actorId: identity.uid,
     proposalId: parsed.data.id,
-    detail: { tokensRevoked: tokens.size },
+    detail: { tokensRevoked: tokens.size, slotReleased: wasActive },
   });
   return { ok: true, tokensRevoked: tokens.size };
 });
